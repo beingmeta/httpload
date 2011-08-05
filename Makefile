@@ -1,54 +1,88 @@
-# Makefile for http_load
+# The GPL applies to this program.
+# In addition, as a special exception, the copyright holders give
+# permission to link the code of portions of this program with the
+# OpenSSL library under certain conditions as described in each
+# individual source file, and distribute linked combinations
+# including the two.
+# You must obey the GNU General Public License in all respects
+# for all of the code used other than OpenSSL.  If you modify
+# file(s) with this exception, you may extend this exception to your
+# version of the file(s), but you are not obligated to do so.  If you
+# do not wish to do so, delete this exception statement from your
+# version.  If you delete this exception statement from all source
+# files in the program, then also delete it here.
 
-# CONFIGURE: If you are using a SystemV-based operating system, such as
-# Solaris, you will need to uncomment this definition.
-#SYSV_LIBS =	-lnsl -lsocket -lresolv
+include version
 
-# CONFIGURE: If you want to compile in support for https, uncomment these
-# definitions.  You will need to have already built OpenSSL, available at
-# http://www.openssl.org/  Make sure the SSL_TREE definition points to the
-# tree with your OpenSSL installation - depending on how you installed it,
-# it may be in /usr/local instead of /usr/local/ssl.
-#SSL_TREE =	/usr/local/ssl
-#SSL_DEFS =	-DUSE_SSL
-#SSL_INC =	-I$(SSL_TREE)/include
-#SSL_LIBS =	-L$(SSL_TREE)/lib -lssl -lcrypto
+TARGET=httpload
 
+WFLAGS=-Wall -W
+OFLAGS=-O2
+CFLAGS+=$(WFLAGS) $(OFLAGS) -DVERSION=\"$(VERSION)\"
 
-BINDIR =	/usr/local/bin
-MANDIR =	/usr/local/man/man1
-CC =		gcc -Wall
-CFLAGS =	-O $(SRANDOM_DEFS) $(SSL_DEFS) $(SSL_INC)
-#CFLAGS =	-g $(SRANDOM_DEFS) $(SSL_DEFS) $(SSL_INC)
-LDFLAGS =	-s $(SSL_LIBS) $(SYSV_LIBS)
-#LDFLAGS =	-g $(SSL_LIBS) $(SYSV_LIBS)
+PACKAGE=$(TARGET)-$(VERSION)
+PREFIX=/usr
+BINDIR=$(PREFIX)/bin
+MANDIR=$(PREFIX)/share/man
+DOCDIR=$(PREFIX)/share/doc/$(TARGET)
 
-all:		http_load
+INSTALL=install
+INSTALLDIR=$(INSTALL) -m 0755 -d
+INSTALLBIN=$(INSTALL) -m 0755
+INSTALLMAN=$(INSTALL) -m 0644
+INSTALLDOC=$(INSTALL) -m 0644
+STRIP=/usr/bin/strip
+RMDIR=/bin/rm -rf
+MKDIR=/bin/mkdir
+ARCHIVE=/bin/tar cf -
+COMPRESS=/bin/gzip -9
 
-http_load:	http_load.o timers.o
-	$(CC) $(CFLAGS) http_load.o timers.o $(LDFLAGS) -o http_load
+OBJS=http_load.o timers.o
 
-http_load.o:	http_load.c timers.h port.h
-	$(CC) $(CFLAGS) -c http_load.c
+MANS=httpload.1
 
-timers.o:	timers.c timers.h
-	$(CC) $(CFLAGS) -c timers.c
+DOCS=license.txt license.OpenSSL readme.txt
 
-install:	all
-	rm -f $(BINDIR)/http_load
-	cp http_load $(BINDIR)
-	rm -f $(MANDIR)/http_load.1
-	cp http_load.1 $(MANDIR)
+ifeq ($(SSL),no)
+CFLAGS+=-DNO_SSL
+else
+LDFLAGS+=-lssl -lcrypto
+endif
+
+ifeq ($(DEBUG),yes)
+CFLAGS+=-D_DEBUG -g
+LDFLAGS+=-g
+endif
+
+ifeq ($(ARM),yes)
+CC=arm-linux-gcc
+endif
+
+all: $(TARGET)
+
+$(TARGET): $(OBJS)
+	$(CC) $(WFLAGS) $(OBJS) $(LDFLAGS) -o $(TARGET)
+	#
+	# Oh, blatant plug: http://keetweej.vanheusden.com/wishlist.html
+
+install: $(TARGET)
+	$(INSTALLDIR) $(DESTDIR)/$(BINDIR)
+	$(INSTALLBIN) $(TARGET) $(DESTDIR)/$(BINDIR)
+	$(INSTALLDIR) $(DESTDIR)/$(MANDIR)/man1
+	$(INSTALLMAN) $(MANS) $(DESTDIR)/$(MANDIR)/man1
+	$(INSTALLDIR) $(DESTDIR)/$(DOCDIR)
+	$(INSTALLDOC) $(DOCS) $(DESTDIR)/$(DOCDIR)
+ifneq (DEBUG,yes)
+	$(STRIP) $(DESTDIR)/$(BINDIR)/$(TARGET)
+endif
 
 clean:
-	rm -f http_load *.o core core.* *.core
+	$(RMDIR) $(OBJS) $(TARGET) *~ core
 
-tar:
-	@name=`sed -n -e '/define VERSION /!d' -e 's,.*http_load ,http_load-,' -e 's,",,p' version.h` ; \
-	  rm -rf $$name ; \
-	  mkdir $$name ; \
-	  tar cf - `cat FILES` | ( cd $$name ; tar xfBp - ) ; \
-	  chmod 644 $$name/Makefile ; \
-	  tar cf $$name.tar $$name ; \
-	  rm -rf $$name ; \
-	  gzip $$name.tar
+package: clean
+	# source package
+	$(RMDIR) $(PACKAGE)*
+	$(MKDIR) $(PACKAGE)
+	$(INSTALLDOC) *.c *.h Makefile version $(MANS) $(DOCS) $(PACKAGE)
+	$(ARCHIVE) $(PACKAGE) | $(COMPRESS) > $(PACKAGE).tgz
+	$(RMDIR) $(PACKAGE)
