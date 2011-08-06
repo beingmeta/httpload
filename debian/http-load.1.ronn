@@ -1,0 +1,118 @@
+http-load -- multiprocessing http test client
+=============================================
+
+## SYNOPSIS
+
+`http-load` [ options ] url_file
+
+ options: [ -checksum ] [ -throttle ] [ -proxy host:port ] [ -verbose ] [ -timeout secs ] [ -seed seed\_value ]
+ [ -sip sip\_file ] [ -cipher str ] (  -parallel N | -rate N [-jitter] ) ( -fetches N | -seconds N )
+
+## DESCRIPTION
+
+http-load runs multiple http fetches in parallel, to test the
+throughput of a web server. However unlike most such test clients, it
+runs in a single process, so it doesn't bog down the client machine.
+It can be configured to do https fetches as well.
+
+
+## OPTIONS
+
+ `-checksum`  do checksums on the files fetched, to make sure they came across
+ ok. The checksums are computed the first time each URL gets fetched,
+ and then recomputed and compared on each subsequent fetch.  Without
+ the `-checksum` flag only the byte count is checked.
+
+ `-throttle` flag tells http-load to throttle the data consumtion rate
+ to 33.6Kbps, to simulate access by modem users.
+
+ `-proxy host:port` run http-load through a web proxy.
+
+ `-verbose` writes a progress reports every minute on stderr.
+
+ `-timeout secs` time to wait on idle connections before giving
+ up. The default is 60 seconds.
+
+ `-seed integer` seed for random number generation.
+
+ `-sip sip_file` specifies a file containing numeric IP
+ addresses (not hostnames), one per line. These get used randomly as
+ the **source** address of connections. They must be real routable
+ addresses on your machine, created with ifconfig, in order for this to
+ work. The advantage of using this option is you can make one client
+ machine look like a whole bank of machines, as far as the server
+ knows.
+
+ `-cipher str` use the specified cipher suite. By default, http-load will
+ negotiate the highest security that the server has available, which is
+ often higher (and slower) than typical browsers will negotiate. 
+ 
+ An example of a cipher set might be "RC4-MD5" - this will run
+ considerably faster than the default. In addition to specifying a raw
+ cipher string, there are three built-in cipher sets accessible by
+ keywords:
+
+ * fastsec - fast security - RC4-MD5
+ * highsec - high security - DES-CBC3-SHA
+ * paranoid - ultra high security - AES256-SHA
+
+ Of course, not all servers are guaranteed to implement these combinations.
+
+ `-parallel N` start making N requests in parallel.
+
+ `-rate nbr_connections` start the specified number of connections
+ each second.
+
+ `-jitter` introduce a 10% jitter on the above specified rate.
+
+ `-fetches N` exit after N fetches have been completed.
+
+ `-seconds secs` exit after after the specified time has elapsed. 
+
+The url_file is just a list of URLs, one per line. The URLs that get
+fetched are chosen randomly from this file.
+
+All flags may be abbreviated to a single letter.
+
+A start specifier, either `-parallel` or `-rate`, **must** be
+specified. The same applies to the end specifier, either `-fetches` or
+`-seconds`.
+
+Note that while the end specifier is obeyed precisely, the start
+specifier is only approximate. If you use the `-rate` option,
+http-load will make its best effort to start connections at that rate,
+but may not succeed.  And if you use the `-parallel` option, http-load
+will attempt to keep that many simultaneous connections going, but may
+fail to keep up if the server is very fast.
+
+## EXAMPLES
+
+    % http-load -rate 2 -seconds 300 urls
+    591 fetches, 8 max parallel, 5.33606e+06 bytes, in 300 seconds
+    9028.87 mean bytes/connection
+    1.97 fetches/sec, 17786.9 bytes/sec
+    msecs/connect: 28.8932 mean, 44.243 max, 24.488 min
+    msecs/first-response: 63.5362 mean, 81.624 max, 57.803 min
+    HTTP response codes:
+      code 200 -- 591
+
+## COPYRIGHT
+
+http-load is Copyright (C) 2006 Jef Poskanzer under the terms of a BSD
+License.
+
+## SEE ALSO
+
+ httping(1), httperf(1), siege(1), thttpd(8)
+
+## VERSION CONTROL
+
+The git repository for this project is at:<br>
+https://github.com/perusio/http-load.
+
+## AUTHOR
+
+http-load was written by Jef Poskanzer \<jef@mail.acme.com\>. 
+ 
+Manual page written by Antonio P. P. Almeida \<appa@perusio.net\>, for
+the Debian project (and may be used by others).

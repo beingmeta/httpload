@@ -12,9 +12,7 @@
 # version.  If you delete this exception statement from all source
 # files in the program, then also delete it here.
 
-include version
-
-TARGET=httpload
+TARGET=http-load
 
 WFLAGS=-Wall -W
 OFLAGS=-O2
