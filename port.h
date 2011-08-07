@@ -96,7 +96,7 @@
 # define HAVE_SCANDIR
 # define HAVE_TM_GMTOFF
 # define NO_SNPRINTF
-/* # define HAVE_INT64T */	/* Digital Unix 4.0d doesn't have int64_t */
+/* # define HAVE_INT64T */      /* Digital Unix 4.0d doesn't have int64_t */
 #endif /* OS_DigitalUnix */
 
 #ifdef OS_SysV

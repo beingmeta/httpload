@@ -42,9 +42,9 @@ typedef union {
     void* p;
     int i;
     long l;
-    } ClientData;
+} ClientData;
 
-extern ClientData JunkClientData;	/* for use when you don't care */
+extern ClientData JunkClientData;       /* for use when you don't care */
 
 /* The TimerProc gets called when the timer expires.  It gets passed
 ** the ClientData associated with the timer, and a timeval in case
@@ -62,15 +62,15 @@ typedef struct TimerStruct {
     struct TimerStruct* prev;
     struct TimerStruct* next;
     int hash;
-    } Timer;
+} Timer;
 
 /* Initialize the timer package. */
 extern void tmr_init( void );
 
 /* Set up a timer, either periodic or one-shot. Returns (Timer*) 0 on errors. */
 extern Timer* tmr_create(
-    struct timeval* nowP, TimerProc* timer_proc, ClientData client_data,
-    long msecs, int periodic );
+                         struct timeval* nowP, TimerProc* timer_proc, ClientData client_data,
+                         long msecs, int periodic );
 
 /* Returns a timeout indicating how long until the next timer triggers.  You
 ** can just put the call to this routine right in your select().  Returns

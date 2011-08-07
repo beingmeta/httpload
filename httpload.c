@@ -347,9 +347,9 @@ main( int argc, char** argv )
                 {
                     cipher = argv[++argn];
                     if ( strcasecmp( cipher, "fastsec" ) == 0 )
-                        cipher = "AES128-SHA";
-                    else if ( strcasecmp( cipher, "highsec" ) == 0 )
                         cipher = "CAMELLIA128-SHA";
+                    else if ( strcasecmp( cipher, "highsec" ) == 0 )
+                        cipher = "AES256-SHA";
                     else if ( strcasecmp( cipher, "paranoid" ) == 0 )
                         cipher = "DHE-RSA-AES256-SHA";
                 }
