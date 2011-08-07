@@ -1,10 +1,11 @@
+FILES
+httpload.1
+httpload.c
 Makefile
-README
-http_load.1
-http_load.c
 make_test_files
 port.h
+README
+test_url.txt
 timers.c
 timers.h
 version.h
-FILES

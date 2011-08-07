@@ -347,11 +347,11 @@ main( int argc, char** argv )
                 {
                     cipher = argv[++argn];
                     if ( strcasecmp( cipher, "fastsec" ) == 0 )
-                        cipher = "RC4-MD5";
+                        cipher = "AES128-SHA";
                     else if ( strcasecmp( cipher, "highsec" ) == 0 )
-                        cipher = "DES-CBC3-SHA";
+                        cipher = "CAMELLIA128-SHA";
                     else if ( strcasecmp( cipher, "paranoid" ) == 0 )
-                        cipher = "AES256-SHA";
+                        cipher = "DHE-RSA-AES256-SHA";
                 }
 #endif /* USE_SSL */
             else if ( strncmp( argv[argn], "-proxy", strlen( argv[argn] ) ) == 0 && argn + 1 < argc )

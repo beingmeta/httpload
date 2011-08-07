@@ -12,11 +12,11 @@
 # version.  If you delete this exception statement from all source
 # files in the program, then also delete it here.
 
-TARGET=http-load
+TARGET=httpload
 
 WFLAGS=-Wall -W
 OFLAGS=-O2
-CFLAGS+=$(WFLAGS) $(OFLAGS) -DVERSION=\"$(VERSION)\"
+CFLAGS+=$(WFLAGS) $(OFLAGS) -DUSE_IPV6 -DUSE_SSL
 
 PACKAGE=$(TARGET)-$(VERSION)
 PREFIX=/usr
@@ -35,11 +35,11 @@ MKDIR=/bin/mkdir
 ARCHIVE=/bin/tar cf -
 COMPRESS=/bin/gzip -9
 
-OBJS=http_load.o timers.o
+OBJS=httpload.o timers.o
 
 MANS=httpload.1
 
-DOCS=license.txt license.OpenSSL readme.txt
+DOCS=README.md
 
 ifeq ($(SSL),no)
 CFLAGS+=-DNO_SSL
@@ -60,8 +60,6 @@ all: $(TARGET)
 
 $(TARGET): $(OBJS)
 	$(CC) $(WFLAGS) $(OBJS) $(LDFLAGS) -o $(TARGET)
-	#
-	# Oh, blatant plug: http://keetweej.vanheusden.com/wishlist.html
 
 install: $(TARGET)
 	$(INSTALLDIR) $(DESTDIR)/$(BINDIR)
