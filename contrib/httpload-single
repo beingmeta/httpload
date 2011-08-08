@@ -1,0 +1,78 @@
+#!/bin/bash
+## httpload-single --- A shell script wrapper around httpload that
+## accepts a URL from the command line.
+
+## Copyright (C) 2011 António P. P. Almeida <appa@perusio.net>
+
+## Author: António P. P. Almeida <appa@perusio.net>
+
+## Permission is hereby granted, free of charge, to any person obtaining a
+## copy of this software and associated documentation files (the "Software"),
+## to deal in the Software without restriction, including without limitation
+## the rights to use, copy, modify, merge, publish, distribute, sublicense,
+## and/or sell copies of the Software, and to permit persons to whom the
+## Software is furnished to do so, subject to the following conditions:
+
+## The above copyright notice and this permission notice shall be included in
+## all copies or substantial portions of the Software.
+
+## Except as contained in this notice, the name(s) of the above copyright
+## holders shall not be used in advertising or otherwise to promote the sale,
+## use or other dealings in this Software without prior written authorization.
+
+## THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+## IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+## FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+## THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+## LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+## FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+## DEALINGS IN THE SOFTWARE.
+
+SCRIPTNAME=${0##*/}
+
+## Usage information.
+function print_usage() {
+    echo "usage: $SCRIPTNAME httpload_args URL"
+}
+
+if [ $# -eq 0 ]; then
+    print_usage
+    exit 1
+fi
+
+
+## The httpload program.
+HTTPLOAD=$(which httpload)
+[ -x $HTTPLOAD ] || exit 0
+
+## Loop for getting the arguments.
+HTTPLOAD_ARGS=""
+j=1
+for i in $*; do
+    if [ $j -lt "$#" ]; then
+        HTTPLOAD_ARGS="$HTTPLOAD_ARGS $i"
+        j=$((j+1))
+    fi
+done
+
+## Creating the temporary file with the URL.
+TEMP_FILE=$(mktemp --tmpdir=.)
+
+## Verify that the last argument is indeed a URL.
+SCHEME=$(echo $i | cut -f 1 -d ':')
+
+case $SCHEME in
+    http|https)
+        echo $i > $TEMP_FILE
+        ;;
+    *)
+        print_usage
+        exit 2
+        ;;
+esac
+
+## Invoking httpload.
+$HTTPLOAD $HTTPLOAD_ARGS $TEMP_FILE
+
+## Cleanup.
+trap "rm -f $TEMP_FILE" exit

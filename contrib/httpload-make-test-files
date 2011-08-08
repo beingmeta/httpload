@@ -1,0 +1,82 @@
+#!/bin/bash
+## httpload-make-test-files --- A script for creating a given number
+## of 1 MB size files for testing a server with httpload.
+
+## Copyright (C) 2009 Xiaozhe Wang <chaoslawful@gmail.com>
+## Copyright (C) 2011 António P. P. Almeida <appa@perusio.net>
+
+## Author: António P. P. Almeida <appa@perusio.net>
+
+## Permission is hereby granted, free of charge, to any person obtaining a
+## copy of this software and associated documentation files (the "Software"),
+## to deal in the Software without restriction, including without limitation
+## the rights to use, copy, modify, merge, publish, distribute, sublicense,
+## and/or sell copies of the Software, and to permit persons to whom the
+## Software is furnished to do so, subject to the following conditions:
+
+## The above copyright notice and this permission notice shall be included in
+## all copies or substantial portions of the Software.
+
+## Except as contained in this notice, the name(s) of the above copyright
+## holders shall not be used in advertising or otherwise to promote the sale,
+## use or other dealings in this Software without prior written authorization.
+
+## THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+## IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+## FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+## THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+## LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+## FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+## DEALINGS IN THE SOFTWARE.
+
+SCRIPTNAME=${0##*/}
+
+## Print the usage.
+print_usage () {
+    echo "usage:  $SCRIPTNAME -k nbr_of_kB_files -m nbr_of_MB_files"
+}
+
+## Check the number of arguments.
+if [ $# -ne 2 ]; then
+    print_usage
+    exit 1
+fi
+
+## Create the temporary file.
+TMP_FILE=$(mktemp)
+
+## Create the kB/MB sized files.
+## $1 - number of concatenations to be done of the basic string.
+## $2 - number of files to be created.
+## $3 - string discriminating kB or MB files.
+generate_files () {
+    if [ "$2" -gt 0 ]; then
+        for i in $(seq -s " " $1); do
+            echo '123456789012345678901234567890123456789012345678901234567890123' >> $TMP_FILE
+        done
+        ## Loop where the files are created.
+        for j in $(seq -s " " $2); do
+            cat $TMP_FILE > $(printf "%02d_%s_testfile.txt" $j $3)
+        done
+    fi
+}
+
+## Parsing the arguments.
+while getopts k:m: OPT; do
+    case $OPT in
+        k|+k) # Number of kB files.
+            generate_files 16 $OPTARG 'kB'
+            ;;
+        m|+m) # Number of MB files.
+            generate_files 16384 $OPTARG 'MB'
+            ;;
+        *)
+            print_usage
+            exit 2
+    esac
+done
+shift $((OPTIND - 1))
+OPTIND=1
+
+## Cleanup.
+trap "rm -f $TMP_FILE" EXIT

@@ -62,7 +62,7 @@ cipher using:
    An example is `ECDHE-RSA-AES256-SHA`. 
       
 A complete example of querying the URLs specified in file
-`test_url_s.txt` using the specified cipher.
+`test_url_s.txt` using the given cipher.
  
     httpload -cipher ECDHE-RSA-AES256-SHA -parallel 10 -seconds 10 test_url_s.txt 
 
