@@ -1,5 +1,5 @@
-httpload -- multiprocessing http test client
-=============================================
+httpload -- event loop based multiprocessing http test client
+=============================================================
 
 ## SYNOPSIS
 
