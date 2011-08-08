@@ -1,0 +1,20 @@
+Source: httpload
+Section: web
+Priority: optional
+Maintainer: António P. P. Almeida <appa@perusio.net>
+Build-Depends: debhelper (>= 8.0.0)
+Standards-Version: 3.9.2
+Homepage: http://github.perusio.org/httpload
+Vcs-Git: git://github.com/perusio/httpload.git
+
+Package: httpload
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Multiprocessing webserver load test tool.
+ httpload runs multiple http fetches in parallel, to test the
+ throughput of a web server. However unlike most such test clients, it
+ runs in a single process, so it doesn't bog down the client machine.
+ .
+ It can be configured to do https fetches as well.
+ .
+ This version is SSL and IPv6 enabled.

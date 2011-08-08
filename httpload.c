@@ -45,6 +45,7 @@
 #include <openssl/ssl.h>
 #include <openssl/rand.h>
 #include <openssl/err.h>
+#include "ssl_ciphers.h"
 #endif
 
 #include "version.h"
@@ -347,11 +348,11 @@ main( int argc, char** argv )
                 {
                     cipher = argv[++argn];
                     if ( strcasecmp( cipher, "fastsec" ) == 0 )
-                        cipher = "CAMELLIA128-SHA";
+                        cipher = FASTSEC_SSL_CIPHER;
                     else if ( strcasecmp( cipher, "highsec" ) == 0 )
-                        cipher = "AES256-SHA";
+                        cipher = HIGHSEC_SSL_CIPHER;
                     else if ( strcasecmp( cipher, "paranoid" ) == 0 )
-                        cipher = "DHE-RSA-AES256-SHA";
+                        cipher = PARANOID_SSL_CIPHER;
                 }
 #endif /* USE_SSL */
             else if ( strncmp( argv[argn], "-proxy", strlen( argv[argn] ) ) == 0 && argn + 1 < argc )
