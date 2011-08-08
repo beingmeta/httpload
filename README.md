@@ -6,7 +6,7 @@
 HTTP requests in parallel. The URLs to be hit are read from a file and
 tried randomly. It runs a single process. It's particularly adequate
 for testing asynchronous web servers in multi-core/multi-cpu machines
-like [Nginx](http://nginx.org).
+like [Nginx](http://nginx.org) or [Lighttpd](http://lighttpd.org/).
 
 The [tool](http://www.acme.com/software/http_load/) was created by
 [Jef Poskanzer](http://www.acme.com/jef/).
@@ -57,7 +57,7 @@ cipher using:
 
  * `-ciphers str` where `str` is a
    [openssl](http://www.openssl.org/docs/apps/ciphers.html) cipher
-   specification strings.
+   specification string.
    
    An example is `ECDHE-RSA-AES256-SHA`. 
       
@@ -86,6 +86,24 @@ between them. The shortcuts are:
 The complete usage documentation is on the
 [manpage](http://github.perusio.org).
 
+## Additional scripts for load testing
+
+There are two scripts for load testing on the `contrib` subdirectory:
+
+ 1. `httpload-make-test-files` - creates a given number of 1kB/1MB
+    sized files for testing purposes. The files are named
+    `01_MB_testfile.txt`,
+    `02_MB_testfile.txt`..., `01_kB_testfile.txt`,
+    `02_kB_testfile.txt`..., respectively.
+    
+    The original script was [created](https://github.com/perusio/httpload/commit/c28f6a58f8040775dfa68984ad8efe476fa19923#diff-5) by
+    [chaoslawful](https://github.com/chaoslawful).
+
+ 2. `httpload-single` - starts a load test using `httpload` using a
+    single URL. This is just a wrapper around httpload. It functions
+    as a stopgap solution until support for such is included in the C
+    program.
+
 ## Comparison with other testing tools
 
  * [`ab`](http://httpd.apache.org/docs/2.2/programs/ab.html):
@@ -103,7 +121,8 @@ The complete usage documentation is on the
  1. Implement CSV output for statistical and graphical treatment of
     the test results.
  
- 2. Implement a single URL target given on the command line.
+ 2. Implement a single URL target given on the command line. For now
+    the `httpload-single` shell script is a stopgap solution for such.
  
  3. Implement
     [`epoll(7)`](https://secure.wikimedia.org/wikipedia/en/wiki/Epoll)
