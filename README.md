@@ -21,7 +21,7 @@ This version is IPv6 and SSL/TLS enabled.
  2. Issue `make` & `make install`. By default the binary will be
     installed under `/usr/bin` and the man page under `/usr/share/man/man1`.
     
- 3. Done
+ 3. Done.
 
 ## Debian package installation 
 
@@ -84,7 +84,7 @@ between them. The shortcuts are:
  * `paranoid` - DHE-RSA-AES256-SHA
  
 The complete usage documentation is on the
-[manpage](http://github.perusio.org).
+[manpage](http://github.perusio.org/httpload).
 
 ## Additional scripts for load testing
 
@@ -92,9 +92,9 @@ There are two scripts for load testing on the `contrib` subdirectory:
 
  1. `httpload-make-test-files` - creates a given number of 1kB/1MB
     sized files for testing purposes. The files are named
-    `01_MB_testfile.txt`,
-    `02_MB_testfile.txt`..., `01_kB_testfile.txt`,
-    `02_kB_testfile.txt`..., respectively.
+    `01_kB_testfile.txt`,
+    `02_kB_testfile.txt`..., `01_MB_testfile.txt`,
+    `02_MB_testfile.txt`..., respectively.
     
     The original script was [created](https://github.com/perusio/httpload/commit/c28f6a58f8040775dfa68984ad8efe476fa19923#diff-5) by
     [chaoslawful](https://github.com/chaoslawful).
