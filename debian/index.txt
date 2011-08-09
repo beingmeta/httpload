@@ -1,0 +1,6 @@
+## Manuals referenced on this project.
+siege(1)   http://man.cx/siege(1)
+thttpd(8)  http://man.cx/thttpd
+nginx(1)   http://man.cx/nginx
+lighttpd(1) http://man.cx/lighttpd
+openssl(1)  http://www.openssl.org/docs/apps/openssl.html
