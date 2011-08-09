@@ -64,10 +64,10 @@ function generate_files () {
 ## Parsing the arguments.
 while getopts k:m: OPT; do
     case $OPT in
-        k|+k) # Number of kB files.
+        k|+k) # Generate kB files.
             generate_files 16 $OPTARG 'kB'
             ;;
-        m|+m) # Number of MB files.
+        m|+m) # Generate MB files.
             generate_files 16384 $OPTARG 'MB'
             ;;
         *)

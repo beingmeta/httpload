@@ -148,21 +148,20 @@ defined in `secure_urls.txt`.
 
 ## COPYRIGHT
 
-httpload is Copyright (C) 2006 Jef Poskanzer under the terms of a BSD
-License.
+httpload is Copyright (C) 2006 Jef Poskanzer, (C) 2011 Antonio P. P. Almeida 
+under the terms of a BSD License.
 
 ## SEE ALSO
 
- httping(1), siege(1), thttpd(8), openssl(1)
+ siege(1), thttpd(8), nginx(1), lighttpd(1), openssl(1) 
 
 ## AVAILABILITY
 
 The latest version of httpload is available at the git repository for
-this project is at: https://github.com/perusio/httpload.
+this project is at: [https://github.com/perusio/httpload](https://github.com/perusio/httpload).
 
 ## AUTHOR
 
-httpload was written by Jef Poskanzer \<jef@mail.acme.com\>. 
+httpload was originally written by Jef Poskanzer \<jef@mail.acme.com\>. 
  
-Manual page written by Antonio P. P. Almeida \<appa@perusio.net\>, for
-the Debian project (and may be used by others).
+Manual page written by Antonio P. P. Almeida \<appa@perusio.net\>.

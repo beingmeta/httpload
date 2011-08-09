@@ -1,0 +1,183 @@
+.\" generated with Ronn/v0.7.3
+.\" http://github.com/rtomayko/ronn/tree/0.7.3
+.
+.TH "HTTPLOAD" "1" "August 2011" "" ""
+.
+.SH "NAME"
+\fBhttpload\fR \- event loop based multiprocessing http test client
+.
+.SH "SYNOPSIS"
+\fBhttpload\fR [ options ] url_file
+.
+.P
+options: [ \-checksum ] [ \-throttle ] [ \-proxy host:port ] [ \-verbose ] [ \-timeout secs ] [ \-seed seed_value ] [ \-sip sip_file ] [ \-cipher str ] ( \-parallel N | \-rate N [\-jitter] ) ( \-fetches N | \-seconds N )
+.
+.SH "DESCRIPTION"
+httpload runs multiple http fetches in parallel, to test the throughput of a web server\. However unlike most such test clients, it runs in a single process, so it doesn\'t bog down the client machine\. It can be configured to do https fetches as well\.
+.
+.SH "OPTIONS"
+\fB\-checksum\fR do checksums on the files fetched, to make sure they came across ok\. The checksums are computed the first time each URL gets fetched, and then recomputed and compared on each subsequent fetch\. Without the \fB\-checksum\fR flag only the byte count is checked\.
+.
+.P
+\fB\-throttle\fR flag tells httpload to throttle the data consumtion rate to 33\.6Kbps, to simulate access by modem users\.
+.
+.P
+\fB\-proxy host:port\fR run httpload through a web proxy\.
+.
+.P
+\fB\-verbose\fR writes a progress reports every minute on stderr\.
+.
+.P
+\fB\-timeout secs\fR time to wait on idle connections before giving up\. The default is 60 seconds\.
+.
+.P
+\fB\-seed integer\fR seed for random number generation\.
+.
+.P
+\fB\-sip sip_file\fR specifies a file containing numeric IP addresses (not hostnames), one per line\. These get used randomly as the \fBsource\fR address of connections\. They must be real routable addresses on your machine, created with ifconfig, in order for this to work\. The advantage of using this option is you can make one client machine look like a whole bank of machines, as far as the server knows\.
+.
+.P
+\fB\-cipher str\fR use the specified cipher suite\. By default, httpload will negotiate the highest security that the server has available, which is often higher (and slower) than typical browsers will negotiate\.
+.
+.P
+An example of a cipher set might be "CAMELLIA128\-SHA" \- this will run considerably faster than the default\. In addition to specifying a raw cipher string, there are three built\-in cipher sets accessible by keywords:
+.
+.IP "\(bu" 4
+fastsec \- fast security \- CAMELLIA128\-SHA
+.
+.IP "\(bu" 4
+highsec \- high security \- AES256\-SHA
+.
+.IP "\(bu" 4
+paranoid \- ultra high security \- DHE\-RSA\-AES256\-SHA
+.
+.IP "" 0
+.
+.P
+Of course, not all servers are guaranteed to implement these combinations\. The choice done is for ciphers SSLv3 HIGH strength\. You should not be using anything SSLv2 or any MD5 or anonymous based cipher if you care about the privacy and integrity of your TLS sessions\.
+.
+.P
+\fB\-parallel N\fR start making N requests in parallel\.
+.
+.P
+\fB\-rate nbr_connections\fR start the specified number of connections each second\.
+.
+.P
+\fB\-jitter\fR introduce a 10% jitter on the above specified rate\.
+.
+.P
+\fB\-fetches N\fR exit after N fetches have been completed\.
+.
+.P
+\fB\-seconds secs\fR exit after after the specified time has elapsed\.
+.
+.P
+The url_file is just a list of URLs, one per line\. The URLs that get fetched are chosen randomly from this file\.
+.
+.P
+All flags may be abbreviated to a single letter\.
+.
+.P
+A start specifier, either \fB\-parallel\fR or \fB\-rate\fR, \fBmust\fR be specified\. The same applies to the end specifier, either \fB\-fetches\fR or \fB\-seconds\fR\.
+.
+.P
+Note that while the end specifier is obeyed precisely, the start specifier is only approximate\. If you use the \fB\-rate\fR option, httpload will make its best effort to start connections at that rate, but may not succeed\. And if you use the \fB\-parallel\fR option, httpload will attempt to keep that many simultaneous connections going, but may fail to keep up if the server is very fast\.
+.
+.SH "EXAMPLES"
+Load the server hitting the URLs defined in \fBtest_urls\.txt\fR during 60 seconds creating 10 new connections each second\.
+.
+.IP "" 4
+.
+.nf
+
+httpload \-rate 10 \-seconds 60 test_urls\.txt
+
+599 fetches, 1 max parallel, 25757 bytes, in 60 seconds
+43 mean bytes/connection
+9\.98333 fetches/sec, 429\.283 bytes/sec
+msecs/connect: 0\.144903 mean, 0\.219 max, 0\.054 min
+msecs/first\-response: 0\.240796 mean, 0\.333 max, 0\.095 min
+HTTP response codes:
+code 200 \-\- 599
+.
+.fi
+.
+.IP "" 0
+.
+.P
+Make 10 requests in parallel during 10 seconds using the URLs defined in \fBtest_urls\.txt\fR\.
+.
+.IP "" 4
+.
+.nf
+
+httpload \-parallel 10 \-seconds 10 test_urls\.txt
+
+16191 fetches, 10 max parallel, 696213 bytes, in 10\.0079 seconds
+43 mean bytes/connection
+1617\.83 fetches/sec, 69566\.6 bytes/sec
+msecs/connect: 0\.171786 mean, 1\.208 max, 0\.032 min
+msecs/first\-response: 0\.453629 mean, 1\.836 max, 0\.233 min
+HTTP response codes:
+code 200 \-\- 16191
+.
+.fi
+.
+.IP "" 0
+.
+.P
+Make 10 requests in parallel using the AES256\-SHA cipher during 10 seconds to the URLs defined in \fBsecure_urls\.txt\fR\.
+.
+.IP "" 4
+.
+.nf
+
+httpload \-cipher highsec \-parallel 10 \-seconds 10 secure_urls\.txt
+
+318 fetches, 10 max parallel, 13674 bytes, in 10\.1627 seconds
+43 mean bytes/connection
+31\.2908 fetches/sec, 1345\.5 bytes/sec
+msecs/connect: 30\.9694 mean, 286\.512 max, 0\.033 min
+msecs/first\-response: 197\.975 mean, 326\.568 max, 28\.925 min
+HTTP response codes:
+code 200 \-\- 318
+.
+.fi
+.
+.IP "" 0
+.
+.P
+Make 10 requests in parallel, creating 10 connections each second using the ECDHE\-RSA\-AES256\-SHA cipher during 10 seconds to the URLs defined in \fBsecure_urls\.txt\fR\.
+.
+.IP "" 4
+.
+.nf
+
+httpload \-cipher ECDHE\-RSA\-AES256\-SHA \-rate 10 \-parallel 10 \-seconds 10 secure_urls\.txt
+
+279 fetches, 10 max parallel, 11997 bytes, in 10\.0124 seconds
+43 mean bytes/connection
+27\.8654 fetches/sec, 1198\.21 bytes/sec
+msecs/connect: 33\.6593 mean, 347\.213 max, 0\.037 min
+msecs/first\-response: 247\.849 mean, 378\.282 max, 31\.069 min
+HTTP response codes:
+code 200 \-\- 279
+.
+.fi
+.
+.IP "" 0
+.
+.SH "COPYRIGHT"
+httpload is Copyright (C) 2006 Jef Poskanzer, (C) 2011 Antonio P\. P\. Almeida under the terms of a BSD License\.
+.
+.SH "SEE ALSO"
+siege(1), thttpd(8), nginx(1), lighttpd(1), openssl(1)
+.
+.SH "AVAILABILITY"
+The latest version of httpload is available at the git repository for this project is at: \fIhttps://github\.com/perusio/httpload\fR\.
+.
+.SH "AUTHOR"
+httpload was originally written by Jef Poskanzer <jef@mail\.acme\.com>\.
+.
+.P
+Manual page written by Antonio P\. P\. Almeida <appa@perusio\.net>\.
