@@ -49,12 +49,12 @@ HTTPLOAD=$(which httpload)
 HTTPLOAD_ARGS=""
 j=1
 for i in $*; do
-    if [ $j -lt "$#" ]; then
+    if [ $j -lt $# ]; then
         HTTPLOAD_ARGS="$HTTPLOAD_ARGS $i"
         j=$((j+1))
     fi
 done
-
+echo "$HTTPLOAD_ARGS $i" && exit 0
 ## Creating the temporary file with the URL.
 TEMP_FILE=$(mktemp --tmpdir=.)
 

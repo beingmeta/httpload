@@ -32,7 +32,7 @@
 SCRIPTNAME=${0##*/}
 
 ## Print the usage.
-print_usage () {
+function print_usage () {
     echo "usage:  $SCRIPTNAME -k nbr_of_kB_files -m nbr_of_MB_files"
 }
 
@@ -49,8 +49,8 @@ TMP_FILE=$(mktemp)
 ## $1 - number of concatenations to be done of the basic string.
 ## $2 - number of files to be created.
 ## $3 - string discriminating kB or MB files.
-generate_files () {
-    if [ "$2" -gt 0 ]; then
+function generate_files () {
+    if [ $2 -gt 0 ]; then
         for i in $(seq -s " " $1); do
             echo '123456789012345678901234567890123456789012345678901234567890123' >> $TMP_FILE
         done

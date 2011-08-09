@@ -8,8 +8,8 @@ tried randomly. It runs a single process. It's particularly adequate
 for testing asynchronous web servers in multi-core/multi-cpu machines
 like [Nginx](http://nginx.org) or [Lighttpd](http://lighttpd.org/).
 
-The [tool](http://www.acme.com/software/http_load/) was created by
-[Jef Poskanzer](http://www.acme.com/jef/).
+The original [tool](http://www.acme.com/software/http_load/) was
+created by [Jef Poskanzer](http://www.acme.com/jef/).
 
 This version is IPv6 and SSL/TLS enabled.
 
@@ -99,10 +99,25 @@ There are two scripts for load testing on the `contrib` subdirectory:
     The original script was [created](https://github.com/perusio/httpload/commit/c28f6a58f8040775dfa68984ad8efe476fa19923#diff-5) by
     [chaoslawful](https://github.com/chaoslawful).
 
+    Examples:
+    
+    Create ten 1 kB files.
+    
+        httpload-make-test-files -k 10 
+
+    Create seven 1 MB files.
+    
+        httpload-make-test-files -m 7 
+
  2. `httpload-single` - starts a load test using `httpload` using a
     single URL. This is just a wrapper around httpload. It functions
     as a stopgap solution until support for such is included in the C
     program.
+
+    Example:
+    
+        httpload-single -parallel 10 -seconds 30 http://example.com/img.jpg
+
 
 ## Comparison with other testing tools
 
