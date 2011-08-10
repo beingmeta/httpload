@@ -1,7 +1,10 @@
-http-load for Debian
---------------------
+httpload for Debian
+-------------------
 
 This is a fork of the http_load tool by Jef Jef Poskanzer. The web
-page of this project is at: http://www.acme.com/software/http_load.
+page of his project is at: http://www.acme.com/software/http_load.
 
- -- António P. P. Almeida <appa@perusio.net>, Sat,  6 Aug 2011 04:35:25 +0100
+There are a couple of helper scripts in
+/usr/share/docs/httpload/contrib/examples directory.
+
+ -- António P. P. Almeida <appa@perusio.net>, Wed, 10 Aug 2011 03:56:53 +0100

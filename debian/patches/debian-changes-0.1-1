@@ -199,12 +199,8 @@ Last-Update: <YYYY-MM-DD>
  
  #endif /* _VERSION_H_ */
 --- /dev/null
-+++ httpload-0.1/test_url.txt
-@@ -0,0 +1 @@
-+http://machaut:89
---- /dev/null
 +++ httpload-0.1/httpload.c
-@@ -0,0 +1,1908 @@
+@@ -0,0 +1,1983 @@
 +/* http_load - multiprocessing http test client
 +**
 +** Copyright � 1998,1999,2001 by Jef Poskanzer <jef@mail.acme.com>.
@@ -252,6 +248,7 @@ Last-Update: <YYYY-MM-DD>
 +#include <openssl/ssl.h>
 +#include <openssl/rand.h>
 +#include <openssl/err.h>
++#include "ssl_ciphers.h"
 +#endif
 +
 +#include "version.h"
@@ -278,31 +275,33 @@ Last-Update: <YYYY-MM-DD>
 +#define RESERVED_FDS 3
 +
 +
-+typedef struct {
-+    char* url_str;
-+    int protocol;
-+    char* hostname;
-+    unsigned short port;
++typedef struct
++{
++  char *url_str;
++  int protocol;
++  char *hostname;
++  unsigned short port;
 +#ifdef USE_IPV6
-+    struct sockaddr_in6 sa;
-+#else /* USE_IPV6 */
-+    struct sockaddr_in sa;
-+#endif /* USE_IPV6 */
-+    int sa_len, sock_family, sock_type, sock_protocol;
-+    char* filename;
-+    int got_bytes;
-+    long bytes;
-+    int got_checksum;
-+    long checksum;
++  struct sockaddr_in6 sa;
++#else				/* USE_IPV6 */
++  struct sockaddr_in sa;
++#endif				/* USE_IPV6 */
++  int sa_len, sock_family, sock_type, sock_protocol;
++  char *filename;
++  int got_bytes;
++  long bytes;
++  int got_checksum;
++  long checksum;
 +} url;
-+static url* urls;
++static url *urls;
 +static int num_urls, max_urls;
 +
-+typedef struct {
-+    char* str;
-+    struct sockaddr_in sa;
++typedef struct
++{
++  char *str;
++  struct sockaddr_in sa;
 +} sip;
-+static sip* sips;
++static sip *sips;
 +static int num_sips, max_sips;
 +
 +/* Protocol symbols. */
@@ -311,32 +310,33 @@ Last-Update: <YYYY-MM-DD>
 +#define PROTO_HTTPS 1
 +#endif
 +
-+typedef struct {
-+    int url_num;
-+    struct sockaddr_in sa;
-+    int sa_len;
-+    int conn_fd;
++typedef struct
++{
++  int url_num;
++  struct sockaddr_in sa;
++  int sa_len;
++  int conn_fd;
 +#ifdef USE_SSL
-+    SSL* ssl;
++  SSL *ssl;
 +#endif
-+    int conn_state, header_state;
-+    int did_connect, did_response;
-+    struct timeval started_at;
-+    struct timeval connect_at;
-+    struct timeval request_at;
-+    struct timeval response_at;
-+    Timer* idle_timer;
-+    Timer* wakeup_timer;
-+    long content_length;
-+    long bytes;
-+    long checksum;
-+    int http_status;
-+    int start_seqn;
++  int conn_state, header_state;
++  int did_connect, did_response;
++  struct timeval started_at;
++  struct timeval connect_at;
++  struct timeval request_at;
++  struct timeval response_at;
++  Timer *idle_timer;
++  Timer *wakeup_timer;
++  long content_length;
++  long bytes;
++  long checksum;
++  int http_status;
++  int start_seqn;
 +} connection;
-+static connection* connections;
++static connection *connections;
 +static int max_connections, num_connections, max_parallel;
 +
-+static int http_status_counts[1000];    /* room for all three-digit statuses */
++static int http_status_counts[1000];	/* room for all three-digit statuses */
 +
 +#define CNST_FREE 0
 +#define CNST_CONNECTING 1
@@ -371,15 +371,16 @@ Last-Update: <YYYY-MM-DD>
 +#define HDST_CONTENT_LENGTH_COLON_WHITESPACE 35
 +#define HDST_CONTENT_LENGTH_COLON_WHITESPACE_NUM 36
 +
-+static char* argv0;
++static char *argv0;
 +static int do_checksum, do_throttle, do_verbose, do_jitter, do_proxy;
 +static float throttle;
 +static int idle_secs;
-+static char* proxy_hostname;
++static char *proxy_hostname;
 +static unsigned short proxy_port;
 +
 +static struct timeval start_at;
-+static int fetches_started, connects_completed, responses_completed, fetches_completed;
++static int fetches_started, connects_completed, responses_completed,
++  fetches_completed;
 +static long long total_bytes;
 +static long long total_connect_usecs, max_connect_usecs, min_connect_usecs;
 +static long long total_response_usecs, max_response_usecs, min_response_usecs;
@@ -388,1730 +389,1800 @@ Last-Update: <YYYY-MM-DD>
 +static long start_interval, low_interval, high_interval, range_interval;
 +
 +/* log connections that take longer than this */
-+static long long log_connect_usecs_thresh = 3*1000*1000;
++static long long log_connect_usecs_thresh = 3 * 1000 * 1000;
 +
 +#ifdef USE_SSL
-+static SSL_CTX* ssl_ctx = (SSL_CTX*) 0;
-+static char* cipher = (char*) 0;
++static SSL_CTX *ssl_ctx = (SSL_CTX *) 0;
++static char *cipher = (char *) 0;
 +#endif
 +
 +/* Forwards. */
-+static void usage( void );
-+static void read_url_file( char* url_file );
-+static void lookup_address( int url_num );
-+static void read_sip_file( char* sip_file );
-+static void start_connection( struct timeval* nowP );
-+static void start_socket( int url_num, int cnum, struct timeval* nowP );
-+static void handle_connect( int cnum, struct timeval* nowP, int double_check );
-+static void handle_read( int cnum, struct timeval* nowP );
-+static void idle_connection( ClientData client_data, struct timeval* nowP );
-+static void wakeup_connection( ClientData client_data, struct timeval* nowP );
-+static void close_connection( int cnum );
-+static void progress_report( ClientData client_data, struct timeval* nowP );
-+static void start_timer( ClientData client_data, struct timeval* nowP );
-+static void end_timer( ClientData client_data, struct timeval* nowP );
-+static void finish( struct timeval* nowP );
-+static long long delta_timeval( struct timeval* start, struct timeval* finish );
-+static void* malloc_check( size_t size );
-+static void* realloc_check( void* ptr, size_t size );
-+static char* strdup_check( char* str );
-+static void check( void* ptr );
++static void usage (void);
++static void read_url_file (char *url_file);
++static void lookup_address (int url_num);
++static void read_sip_file (char *sip_file);
++static void start_connection (struct timeval *nowP);
++static void start_socket (int url_num, int cnum, struct timeval *nowP);
++static void handle_connect (int cnum, struct timeval *nowP, int double_check);
++static void handle_read (int cnum, struct timeval *nowP);
++static void idle_connection (ClientData client_data, struct timeval *nowP);
++static void wakeup_connection (ClientData client_data, struct timeval *nowP);
++static void close_connection (int cnum);
++static void progress_report (ClientData client_data, struct timeval *nowP);
++static void start_timer (ClientData client_data, struct timeval *nowP);
++static void end_timer (ClientData client_data, struct timeval *nowP);
++static void finish (struct timeval *nowP);
++static long long delta_timeval (struct timeval *start,
++				struct timeval *finish);
++static void *malloc_check (size_t size);
++static void *realloc_check (void *ptr, size_t size);
++static char *strdup_check (char *str);
++static void check (void *ptr);
 +
 +
 +int
-+main( int argc, char** argv )
++main (int argc, char **argv)
 +{
-+    int argn;
-+    int start;
++  int argn;
++  int start;
 +#define START_NONE 0
 +#define START_PARALLEL 1
 +#define START_RATE 2
-+    int start_parallel = -1, start_rate = -1;
-+    int end;
++  int start_parallel = -1, start_rate = -1;
++  int end;
 +#define END_NONE 0
 +#define END_FETCHES 1
 +#define END_SECONDS 2
-+    int end_fetches = -1, end_seconds = -1;
-+    int cnum;
-+    char* url_file;
-+    char* sip_file;
-+    char* seed_arg = NULL;
++  int end_fetches = -1, end_seconds = -1;
++  int cnum;
++  char *url_file;
++  char *sip_file;
++  char *seed_arg = NULL;
 +#ifdef RLIMIT_NOFILE
-+    struct rlimit limits;
++  struct rlimit limits;
 +#endif /* RLIMIT_NOFILE */
-+    fd_set rfdset;
-+    fd_set wfdset;
-+    struct timeval now;
-+    int i, r;
++  fd_set rfdset;
++  fd_set wfdset;
++  struct timeval now;
++  int i, r;
 +
-+    max_connections = 64 - RESERVED_FDS;        /* a guess */
++  max_connections = 64 - RESERVED_FDS;	/* a guess */
 +#ifdef RLIMIT_NOFILE
-+    /* Try and increase the limit on # of files to the maximum. */
-+    if ( getrlimit( RLIMIT_NOFILE, &limits ) == 0 )
-+        {
-+            if ( limits.rlim_cur != limits.rlim_max )
-+                {
-+                    if ( limits.rlim_max == RLIM_INFINITY )
-+                        limits.rlim_cur = 8192;         /* arbitrary */
-+                    else if ( limits.rlim_max > limits.rlim_cur )
-+                        limits.rlim_cur = limits.rlim_max;
-+                    (void) setrlimit( RLIMIT_NOFILE, &limits );
-+                }
-+            max_connections = limits.rlim_cur - RESERVED_FDS;
-+        }
++  /* Try and increase the limit on # of files to the maximum. */
++  if (getrlimit (RLIMIT_NOFILE, &limits) == 0)
++    {
++      if (limits.rlim_cur != limits.rlim_max)
++	{
++	  if (limits.rlim_max == RLIM_INFINITY)
++	    limits.rlim_cur = 8192;	/* arbitrary */
++	  else if (limits.rlim_max > limits.rlim_cur)
++	    limits.rlim_cur = limits.rlim_max;
++	  (void) setrlimit (RLIMIT_NOFILE, &limits);
++	}
++      max_connections = limits.rlim_cur - RESERVED_FDS;
++    }
 +#endif /* RLIMIT_NOFILE */
 +
-+    /* Parse args. */
-+    argv0 = argv[0];
-+    argn = 1;
-+    do_checksum = do_throttle = do_verbose = do_jitter = do_proxy = 0;
-+    throttle = THROTTLE;
-+    sip_file = (char*) 0;
-+    idle_secs = IDLE_SECS;
-+    start = START_NONE;
-+    end = END_NONE;
-+    while ( argn < argc && argv[argn][0] == '-' && argv[argn][1] != '\0' )
-+        {
-+            if ( strncmp( argv[argn], "-checksum", strlen( argv[argn] ) ) == 0 )
-+                do_checksum = 1;
-+            else if ( strncmp( argv[argn], "-throttle", strlen( argv[argn] ) ) == 0 )
-+                do_throttle = 1;
-+            else if ( strncmp( argv[argn], "-Throttle", strlen( argv[argn] ) ) == 0 && argn + 1 < argc )
-+                {
-+                    do_throttle = 1;
-+                    throttle = atoi( argv[++argn] ) / 10.0;
-+                }
-+            else if ( strncmp( argv[argn], "-verbose", strlen( argv[argn] ) ) == 0 )
-+                do_verbose = 1;
-+            else if ( strncmp( argv[argn], "-timeout", strlen( argv[argn] ) ) == 0 && argn + 1 < argc )
-+                idle_secs = atoi( argv[++argn] );
-+            else if ( strncmp( argv[argn], "-jitter", strlen( argv[argn] ) ) == 0 )
-+                do_jitter = 1;
-+            else if ( strncmp( argv[argn], "-parallel", strlen( argv[argn] ) ) == 0 && argn + 1 < argc )
-+                {
-+                    start = START_PARALLEL;
-+                    start_parallel = atoi( argv[++argn] );
-+                    if ( start_parallel < 1 )
-+                        {
-+                            (void) fprintf(
-+                                           stderr, "%s: parallel must be at least 1\n", argv0 );
-+                            exit( 1 );
-+                        }
-+                    if ( start_parallel > max_connections )
-+                        {
-+                            (void) fprintf(
-+                                           stderr, "%s: parallel may be at most %d\n", argv0, max_connections );
-+                            exit( 1 );
-+                        }
-+                }
-+            else if ( strncmp( argv[argn], "-rate", strlen( argv[argn] ) ) == 0 && argn + 1 < argc )
-+                {
-+                    start = START_RATE;
-+                    start_rate = atoi( argv[++argn] );
-+                    if ( start_rate < 1 )
-+                        {
-+                            (void) fprintf(
-+                                           stderr, "%s: rate must be at least 1\n", argv0 );
-+                            exit( 1 );
-+                        }
-+                    if ( start_rate > 1000 )
-+                        {
-+                            (void) fprintf(
-+                                           stderr, "%s: rate may be at most 1000\n", argv0 );
-+                            exit( 1 );
-+                        }
-+                }
-+            else if ( strncmp( argv[argn], "-fetches", strlen( argv[argn] ) ) == 0 && argn + 1 < argc )
-+                {
-+                    end = END_FETCHES;
-+                    end_fetches = atoi( argv[++argn] );
-+                    if ( end_fetches < 1 )
-+                        {
-+                            (void) fprintf(
-+                                           stderr, "%s: fetches must be at least 1\n", argv0 );
-+                            exit( 1 );
-+                        }
-+                }
-+            else if ( strncmp( argv[argn], "-seconds", strlen( argv[argn] ) ) == 0 && argn + 1 < argc )
-+                {
-+                    end = END_SECONDS;
-+                    end_seconds = atoi( argv[++argn] );
-+                    if ( end_seconds < 1 )
-+                        {
-+                            (void) fprintf(
-+                                           stderr, "%s: seconds must be at least 1\n", argv0 );
-+                            exit( 1 );
-+                        }
-+                }
-+            else if ( strncmp( argv[argn], "-seed", strlen( argv[argn] ) ) == 0 && argn + 1 < argc )
-+                {
-+                    seed_arg = argv[++argn];
-+                }
-+            else if ( strncmp( argv[argn], "-sip", strlen( argv[argn] ) ) == 0 && argn + 1 < argc )
-+                sip_file = argv[++argn];
++  /* Parse args. */
++  argv0 = argv[0];
++  argn = 1;
++  do_checksum = do_throttle = do_verbose = do_jitter = do_proxy = 0;
++  throttle = THROTTLE;
++  sip_file = (char *) 0;
++  idle_secs = IDLE_SECS;
++  start = START_NONE;
++  end = END_NONE;
++  while (argn < argc && argv[argn][0] == '-' && argv[argn][1] != '\0')
++    {
++      if (strncmp (argv[argn], "-checksum", strlen (argv[argn])) == 0)
++	do_checksum = 1;
++      else if (strncmp (argv[argn], "-throttle", strlen (argv[argn])) == 0)
++	do_throttle = 1;
++      else if (strncmp (argv[argn], "-Throttle", strlen (argv[argn])) == 0
++	       && argn + 1 < argc)
++	{
++	  do_throttle = 1;
++	  throttle = atoi (argv[++argn]) / 10.0;
++	}
++      else if (strncmp (argv[argn], "-verbose", strlen (argv[argn])) == 0)
++	do_verbose = 1;
++      else if (strncmp (argv[argn], "-timeout", strlen (argv[argn])) == 0
++	       && argn + 1 < argc)
++	idle_secs = atoi (argv[++argn]);
++      else if (strncmp (argv[argn], "-jitter", strlen (argv[argn])) == 0)
++	do_jitter = 1;
++      else if (strncmp (argv[argn], "-parallel", strlen (argv[argn])) == 0
++	       && argn + 1 < argc)
++	{
++	  start = START_PARALLEL;
++	  start_parallel = atoi (argv[++argn]);
++	  if (start_parallel < 1)
++	    {
++	      (void) fprintf (stderr, "%s: parallel must be at least 1\n",
++			      argv0);
++	      exit (1);
++	    }
++	  if (start_parallel > max_connections)
++	    {
++	      (void) fprintf (stderr, "%s: parallel may be at most %d\n",
++			      argv0, max_connections);
++	      exit (1);
++	    }
++	}
++      else if (strncmp (argv[argn], "-rate", strlen (argv[argn])) == 0
++	       && argn + 1 < argc)
++	{
++	  start = START_RATE;
++	  start_rate = atoi (argv[++argn]);
++	  if (start_rate < 1)
++	    {
++	      (void) fprintf (stderr, "%s: rate must be at least 1\n", argv0);
++	      exit (1);
++	    }
++	  if (start_rate > 1000)
++	    {
++	      (void) fprintf (stderr, "%s: rate may be at most 1000\n",
++			      argv0);
++	      exit (1);
++	    }
++	}
++      else if (strncmp (argv[argn], "-fetches", strlen (argv[argn])) == 0
++	       && argn + 1 < argc)
++	{
++	  end = END_FETCHES;
++	  end_fetches = atoi (argv[++argn]);
++	  if (end_fetches < 1)
++	    {
++	      (void) fprintf (stderr, "%s: fetches must be at least 1\n",
++			      argv0);
++	      exit (1);
++	    }
++	}
++      else if (strncmp (argv[argn], "-seconds", strlen (argv[argn])) == 0
++	       && argn + 1 < argc)
++	{
++	  end = END_SECONDS;
++	  end_seconds = atoi (argv[++argn]);
++	  if (end_seconds < 1)
++	    {
++	      (void) fprintf (stderr, "%s: seconds must be at least 1\n",
++			      argv0);
++	      exit (1);
++	    }
++	}
++      else if (strncmp (argv[argn], "-seed", strlen (argv[argn])) == 0
++	       && argn + 1 < argc)
++	{
++	  seed_arg = argv[++argn];
++	}
++      else if (strncmp (argv[argn], "-sip", strlen (argv[argn])) == 0
++	       && argn + 1 < argc)
++	sip_file = argv[++argn];
 +#ifdef USE_SSL
-+            else if ( strncmp( argv[argn], "-cipher", strlen( argv[argn] ) ) == 0 && argn + 1 < argc )
-+                {
-+                    cipher = argv[++argn];
-+                    if ( strcasecmp( cipher, "fastsec" ) == 0 )
-+                        cipher = "RC4-MD5";
-+                    else if ( strcasecmp( cipher, "highsec" ) == 0 )
-+                        cipher = "DES-CBC3-SHA";
-+                    else if ( strcasecmp( cipher, "paranoid" ) == 0 )
-+                        cipher = "AES256-SHA";
-+                }
++      else if (strncmp (argv[argn], "-cipher", strlen (argv[argn])) == 0
++	       && argn + 1 < argc)
++	{
++	  cipher = argv[++argn];
++	  if (strcasecmp (cipher, "fastsec") == 0)
++	    cipher = FASTSEC_SSL_CIPHER;
++	  else if (strcasecmp (cipher, "highsec") == 0)
++	    cipher = HIGHSEC_SSL_CIPHER;
++	  else if (strcasecmp (cipher, "paranoid") == 0)
++	    cipher = PARANOID_SSL_CIPHER;
++	}
 +#endif /* USE_SSL */
-+            else if ( strncmp( argv[argn], "-proxy", strlen( argv[argn] ) ) == 0 && argn + 1 < argc )
-+                {
-+                    char* colon;
-+                    do_proxy = 1;
-+                    proxy_hostname = argv[++argn];
-+                    colon = strchr( proxy_hostname, ':' );
-+                    if ( colon == (char*) 0 )
-+                        proxy_port = 80;
-+                    else
-+                        {
-+                            proxy_port = (unsigned short) atoi( colon + 1 );
-+                            *colon = '\0';
-+                        }
-+                }
-+            else
-+                usage();
-+            ++argn;
-+        }
-+    if ( argn + 1 != argc )
-+        usage();
-+    if ( start == START_NONE || end == END_NONE )
-+        usage();
-+    if ( do_jitter && start != START_RATE )
-+        usage();
-+    url_file = argv[argn];
-+
-+    /* Read in and parse the URLs. */
-+    read_url_file( url_file );
-+
-+    /* Read in the source IP file, if specified. */
-+    if ( sip_file != (char*) 0 )
-+        read_sip_file( sip_file );
-+
-+    /* Initialize the connections table. */
-+    if ( start == START_PARALLEL )
-+        max_connections = start_parallel;
-+    connections = (connection*) malloc_check(
-+                                             max_connections * sizeof(connection) );
-+    for ( cnum = 0; cnum < max_connections; ++cnum )
-+        connections[cnum].conn_state = CNST_FREE;
-+    num_connections = max_parallel = 0;
-+
-+    /* Initialize the HTTP status-code histogram. */
-+    for ( i = 0; i < 1000; ++i )
-+        http_status_counts[i] = 0;
-+
-+    /* Initialize the statistics. */
-+    fetches_started = 0;
-+    connects_completed = 0;
-+    responses_completed = 0;
-+    fetches_completed = 0;
-+    total_bytes = 0;
-+    total_connect_usecs = 0;
-+    max_connect_usecs = 0;
-+    min_connect_usecs = 1000000000L;
-+    total_response_usecs = 0;
-+    max_response_usecs = 0;
-+    min_response_usecs = 1000000000L;
-+    total_timeouts = 0;
-+    total_badbytes = 0;
-+    total_badchecksums = 0;
-+
-+    /* Initialize the random number generator. */
-+    if (seed_arg) {
-+        if (do_verbose)
-+            (void) fprintf( stderr, "Seed %d\n", atoi( seed_arg ) );
-+        srandom( atoi( seed_arg ) );
++      else if (strncmp (argv[argn], "-proxy", strlen (argv[argn])) == 0
++	       && argn + 1 < argc)
++	{
++	  char *colon;
++	  do_proxy = 1;
++	  proxy_hostname = argv[++argn];
++	  colon = strchr (proxy_hostname, ':');
++	  if (colon == (char *) 0)
++	    proxy_port = 80;
++	  else
++	    {
++	      proxy_port = (unsigned short) atoi (colon + 1);
++	      *colon = '\0';
++	    }
++	}
++      else
++	usage ();
++      ++argn;
 +    }
-+    else {
-+#ifdef HAVE_SRANDOMDEV
-+        srandomdev();
-+#else
-+        srandom( (int) time( (time_t*) 0 ) ^ getpid() );
-+#endif
-+    }
-+
-+    /* Initialize the rest. */
-+    tmr_init();
-+    (void) gettimeofday( &now, (struct timezone*) 0 );
-+    start_at = now;
-+    if ( do_verbose )
-+        (void) tmr_create(
-+                          &now, progress_report, JunkClientData, PROGRESS_SECS * 1000L, 1 );
-+    if ( start == START_RATE )
-+        {
-+            start_interval = 1000L / start_rate;
-+            if ( do_jitter )
-+                {
-+                    low_interval = start_interval * 9 / 10;
-+                    high_interval = start_interval * 11 / 10;
-+                    range_interval = high_interval - low_interval + 1;
-+                }
-+            (void) tmr_create(
-+                              &now, start_timer, JunkClientData, start_interval, ! do_jitter );
-+        }
-+    if ( end == END_SECONDS )
-+        (void) tmr_create(
-+                          &now, end_timer, JunkClientData, end_seconds * 1000L, 0 );
-+    (void) signal( SIGPIPE, SIG_IGN );
-+
-+    /* Main loop. */
-+    for (;;)
-+        {
-+            if ( end == END_FETCHES && fetches_completed >= end_fetches )
-+                finish( &now );
-+
-+            if ( start == START_PARALLEL )
-+                {
-+                    /* See if we need to start any new connections; but at most 10. */
-+                    for ( i = 0;
-+                          i < 10 &&
-+                              num_connections < start_parallel &&
-+                              ( end != END_FETCHES || fetches_started < end_fetches );
-+                          ++i )
-+                        {
-+                            start_connection( &now );
-+                            (void) gettimeofday( &now, (struct timezone*) 0 );
-+                            tmr_run( &now );
-+                        }
-+                }
-+
-+            /* Build the fdsets. */
-+            FD_ZERO( &rfdset );
-+            FD_ZERO( &wfdset );
-+            for ( cnum = 0; cnum < max_connections; ++cnum )
-+                switch ( connections[cnum].conn_state )
-+                    {
-+                    case CNST_CONNECTING:
-+                        FD_SET( connections[cnum].conn_fd, &wfdset );
-+                        break;
-+                    case CNST_HEADERS:
-+                    case CNST_READING:
-+                        FD_SET( connections[cnum].conn_fd, &rfdset );
-+                        break;
-+                    }
-+            r = select(
-+                       FD_SETSIZE, &rfdset, &wfdset, (fd_set*) 0, tmr_timeout( &now ) );
-+            if ( r < 0 )
-+                {
-+                    perror( "select" );
-+                    exit( 1 );
-+                }
-+            (void) gettimeofday( &now, (struct timezone*) 0 );
-+
-+            /* Service them. */
-+            for ( cnum = 0; cnum < max_connections; ++cnum )
-+                switch ( connections[cnum].conn_state )
-+                    {
-+                    case CNST_CONNECTING:
-+                        if ( FD_ISSET( connections[cnum].conn_fd, &wfdset ) )
-+                            handle_connect( cnum, &now, 1 );
-+                        break;
-+                    case CNST_HEADERS:
-+                    case CNST_READING:
-+                        if ( FD_ISSET( connections[cnum].conn_fd, &rfdset ) )
-+                            handle_read( cnum, &now );
-+                        break;
-+                    }
-+            /* And run the timers. */
-+            tmr_run( &now );
-+        }
-+
-+    /* NOT_REACHED */
-+}
-+
-+
-+static void
-+usage( void )
-+{
-+    (void) fprintf( stderr,
-+                    "usage:  %s [-checksum] [-throttle] [-proxy host:port] [-verbose] [-seed N] [-timeout secs] [-sip sip_file]\n", argv0 );
-+#ifdef USE_SSL
-+    (void) fprintf( stderr,
-+                    "            [-cipher str]\n" );
-+#endif /* USE_SSL */
-+    (void) fprintf( stderr,
-+                    "            -parallel N | -rate N [-jitter]\n" );
-+    (void) fprintf( stderr,
-+                    "            -fetches N | -seconds N\n" );
-+    (void) fprintf( stderr,
-+                    "            url_file\n" );
-+    (void) fprintf( stderr,
-+                    "One start specifier, either -parallel or -rate, is required.\n" );
-+    (void) fprintf( stderr,
-+                    "One end specifier, either -fetches or -seconds, is required.\n" );
-+    exit( 1 );
-+}
-+
-+
-+static void
-+read_url_file( char* url_file )
-+{
-+    FILE* fp;
-+    char line[5000], hostname[5000];
-+    char* http = "http://";
-+    int http_len = strlen( http );
-+#ifdef USE_SSL
-+    char* https = "https://";
-+    int https_len = strlen( https );
-+#endif
-+    int proto_len, host_len;
-+    char* cp;
-+
-+    fp = fopen( url_file, "r" );
-+    if ( fp == (FILE*) 0 )
-+        {
-+            perror( url_file );
-+            exit( 1 );
-+        }
-+
-+    max_urls = 100;
-+    urls = (url*) malloc_check( max_urls * sizeof(url) );
-+    num_urls = 0;
-+    while ( fgets( line, sizeof(line), fp ) != (char*) 0 )
-+        {
-+            /* Nuke trailing newline. */
-+            if ( line[strlen( line ) - 1] == '\n' )
-+                line[strlen( line ) - 1] = '\0';
-+
-+            /* Check for room in urls. */
-+            if ( num_urls >= max_urls )
-+                {
-+                    max_urls *= 2;
-+                    urls = (url*) realloc_check( (void*) urls, max_urls * sizeof(url) );
-+                }
-+
-+            /* Add to table. */
-+            urls[num_urls].url_str = strdup_check( line );
-+
-+            /* Parse it. */
-+            if ( strncmp( http, line, http_len ) == 0 )
-+                {
-+                    proto_len = http_len;
-+                    urls[num_urls].protocol = PROTO_HTTP;
-+                }
-+#ifdef USE_SSL
-+            else if ( strncmp( https, line, https_len ) == 0 )
-+                {
-+                    proto_len = https_len;
-+                    urls[num_urls].protocol = PROTO_HTTPS;
-+                }
-+#endif
-+            else
-+                {
-+                    (void) fprintf( stderr, "%s: unknown protocol - %s\n", argv0, line );
-+                    exit( 1 );
-+                }
-+            for ( cp = line + proto_len;
-+                  *cp != '\0' && *cp != ':' && *cp != '/'; ++cp )
-+                ;
-+            host_len = cp - line;
-+            host_len -= proto_len;
-+            strncpy( hostname, line + proto_len, host_len );
-+            hostname[host_len] = '\0';
-+            urls[num_urls].hostname = strdup_check( hostname );
-+            if ( *cp == ':' )
-+                {
-+                    urls[num_urls].port = (unsigned short) atoi( ++cp );
-+                    while ( *cp != '\0' && *cp != '/' )
-+                        ++cp;
-+                }
-+            else
-+#ifdef USE_SSL
-+                if ( urls[num_urls].protocol == PROTO_HTTPS )
-+                    urls[num_urls].port = 443;
-+                else
-+                    urls[num_urls].port = 80;
-+#else
-+            urls[num_urls].port = 80;
-+#endif
-+            if ( *cp == '\0' )
-+                urls[num_urls].filename = strdup_check( "/" );
-+            else
-+                urls[num_urls].filename = strdup_check( cp );
-+
-+            lookup_address( num_urls );
-+
-+            urls[num_urls].got_bytes = 0;
-+            urls[num_urls].got_checksum = 0;
-+            ++num_urls;
-+        }
-+}
-+
-+
-+static void
-+lookup_address( int url_num )
-+{
-+    char* hostname;
-+    unsigned short port;
-+#ifdef USE_IPV6
-+    struct addrinfo hints;
-+    char portstr[10];
-+    int gaierr;
-+    struct addrinfo* ai;
-+    struct addrinfo* ai2;
-+    struct addrinfo* aiv4;
-+    struct addrinfo* aiv6;
-+#else /* USE_IPV6 */
-+    struct hostent *he;
-+#endif /* USE_IPV6 */
-+
-+    urls[url_num].sa_len = sizeof(urls[url_num].sa);
-+    (void) memset( (void*) &urls[url_num].sa, 0, urls[url_num].sa_len );
-+
-+    if ( do_proxy )
-+        {
-+            hostname = proxy_hostname;
-+            port = proxy_port;
-+        }
-+    else
-+        {
-+            hostname = urls[url_num].hostname;
-+            port = urls[url_num].port;
-+        }
-+
-+#ifdef USE_IPV6
-+
-+    (void) memset( &hints, 0, sizeof(hints) );
-+    hints.ai_family = PF_UNSPEC;
-+    hints.ai_socktype = SOCK_STREAM;
-+    (void) snprintf( portstr, sizeof(portstr), "%d", (int) port );
-+    if ( (gaierr = getaddrinfo( hostname, portstr, &hints, &ai )) != 0 )
-+        {
-+            (void) fprintf(
-+                           stderr, "%s: getaddrinfo %s - %s\n", argv0, hostname,
-+                           gai_strerror( gaierr ) );
-+            exit( 1 );
-+        }
-+
-+    /* Find the first IPv4 and IPv6 entries. */
-+    aiv4 = (struct addrinfo*) 0;
-+    aiv6 = (struct addrinfo*) 0;
-+    for ( ai2 = ai; ai2 != (struct addrinfo*) 0; ai2 = ai2->ai_next )
-+        {
-+            switch ( ai2->ai_family )
-+                {
-+                case AF_INET:
-+                    if ( aiv4 == (struct addrinfo*) 0 )
-+                        aiv4 = ai2;
-+                    break;
-+                case AF_INET6:
-+                    if ( aiv6 == (struct addrinfo*) 0 )
-+                        aiv6 = ai2;
-+                    break;
-+                }
-+        }
-+
-+    /* If there's an IPv4 address, use that, otherwise try IPv6. */
-+    if ( aiv4 != (struct addrinfo*) 0 )
-+        {
-+            if ( sizeof(urls[url_num].sa) < aiv4->ai_addrlen )
-+                {
-+                    (void) fprintf(
-+                                   stderr, "%s - sockaddr too small (%lu < %lu)\n", hostname,
-+                                   (unsigned long) sizeof(urls[url_num].sa),
-+                                   (unsigned long) aiv4->ai_addrlen );
-+                    exit( 1 );
-+                }
-+            urls[url_num].sock_family = aiv4->ai_family;
-+            urls[url_num].sock_type = aiv4->ai_socktype;
-+            urls[url_num].sock_protocol = aiv4->ai_protocol;
-+            urls[url_num].sa_len = aiv4->ai_addrlen;
-+            (void) memmove( &urls[url_num].sa, aiv4->ai_addr, aiv4->ai_addrlen );
-+            freeaddrinfo( ai );
-+            return;
-+        }
-+    if ( aiv6 != (struct addrinfo*) 0 )
-+        {
-+            if ( sizeof(urls[url_num].sa) < aiv6->ai_addrlen )
-+                {
-+                    (void) fprintf(
-+                                   stderr, "%s - sockaddr too small (%lu < %lu)\n", hostname,
-+                                   (unsigned long) sizeof(urls[url_num].sa),
-+                                   (unsigned long) aiv6->ai_addrlen );
-+                    exit( 1 );
-+                }
-+            urls[url_num].sock_family = aiv6->ai_family;
-+            urls[url_num].sock_type = aiv6->ai_socktype;
-+            urls[url_num].sock_protocol = aiv6->ai_protocol;
-+            urls[url_num].sa_len = aiv6->ai_addrlen;
-+            (void) memmove( &urls[url_num].sa, aiv6->ai_addr, aiv6->ai_addrlen );
-+            freeaddrinfo( ai );
-+            return;
-+        }
-+
-+    (void) fprintf(
-+                   stderr, "%s: no valid address found for host %s\n", argv0, hostname );
-+    exit( 1 );
-+
-+#else /* USE_IPV6 */
-+
-+    he = gethostbyname( hostname );
-+    if ( he == (struct hostent*) 0 )
-+        {
-+            (void) fprintf( stderr, "%s: unknown host - %s\n", argv0, hostname );
-+            exit( 1 );
-+        }
-+    urls[url_num].sock_family = urls[url_num].sa.sin_family = he->h_addrtype;
-+    urls[url_num].sock_type = SOCK_STREAM;
-+    urls[url_num].sock_protocol = 0;
-+    urls[url_num].sa_len = sizeof(urls[url_num].sa);
-+    (void) memmove( &urls[url_num].sa.sin_addr, he->h_addr, he->h_length );
-+    urls[url_num].sa.sin_port = htons( port );
-+
-+#endif /* USE_IPV6 */
-+
-+}
-+
-+
-+static void
-+read_sip_file( char* sip_file )
-+{
-+    FILE* fp;
-+    char line[5000];
-+
-+    fp = fopen( sip_file, "r" );
-+    if ( fp == (FILE*) 0 )
-+        {
-+            perror( sip_file );
-+            exit( 1 );
-+        }
-+
-+    max_sips = 100;
-+    sips = (sip*) malloc_check( max_sips * sizeof(sip) );
-+    num_sips = 0;
-+    while ( fgets( line, sizeof(line), fp ) != (char*) 0 )
-+        {
-+            /* Nuke trailing newline. */
-+            if ( line[strlen( line ) - 1] == '\n' )
-+                line[strlen( line ) - 1] = '\0';
-+
-+            /* Check for room in sips. */
-+            if ( num_sips >= max_sips )
-+                {
-+                    max_sips *= 2;
-+                    sips = (sip*) realloc_check( (void*) sips, max_sips * sizeof(sip) );
-+                }
-+
-+            /* Add to table. */
-+            sips[num_sips].str = strdup_check( line );
-+            (void) memset( (void*) &sips[num_sips].sa, 0, sizeof(sips[num_sips].sa) );
-+            if ( ! inet_aton( sips[num_sips].str, &sips[num_sips].sa.sin_addr ) )
-+                {
-+                    (void) fprintf(
-+                                   stderr, "%s: cannot convert source IP address %s\n",
-+                                   argv0, sips[num_sips].str );
-+                    exit( 1 );
-+                }
-+            ++num_sips;
-+        }
-+}
-+
-+
-+static void
-+start_connection( struct timeval* nowP )
-+{
-+    int cnum, url_num;
-+
-+    /* Find an empty connection slot. */
-+    for ( cnum = 0; cnum < max_connections; ++cnum )
-+        if ( connections[cnum].conn_state == CNST_FREE )
-+            {
-+                /* Choose a URL. */
-+                url_num = ( (unsigned long) random() ) % ( (unsigned int) num_urls );
-+                /* Start the socket. */
-+                start_socket( url_num, cnum, nowP );
-+                if ( connections[cnum].conn_state != CNST_FREE )
-+                    {
-+                        ++num_connections;
-+                        if ( num_connections > max_parallel )
-+                            max_parallel = num_connections;
-+                    }
-+                ++fetches_started;
-+                connections[cnum].start_seqn = fetches_started;
-+                return;
-+            }
-+    /* No slots left. */
-+    (void) fprintf( stderr, "%s: ran out of connection slots\n", argv0 );
-+    finish( nowP );
-+}
-+
-+
-+static void
-+start_socket( int url_num, int cnum, struct timeval* nowP )
-+{
-+    ClientData client_data;
-+    int flags;
-+    int sip_num;
-+
-+    /* Start filling in the connection slot. */
-+    connections[cnum].url_num = url_num;
-+    connections[cnum].started_at = *nowP;
-+    client_data.i = cnum;
-+    connections[cnum].did_connect = 0;
-+    connections[cnum].did_response = 0;
-+    connections[cnum].idle_timer = tmr_create(
-+                                              nowP, idle_connection, client_data, idle_secs * 1000L, 0 );
-+    connections[cnum].wakeup_timer = (Timer*) 0;
-+    connections[cnum].content_length = -1;
-+    connections[cnum].bytes = 0;
-+    connections[cnum].checksum = 0;
-+    connections[cnum].http_status = -1;
-+
-+    /* Make a socket. */
-+    connections[cnum].conn_fd = socket(
-+                                       urls[url_num].sock_family, urls[url_num].sock_type,
-+                                       urls[url_num].sock_protocol );
-+    if ( connections[cnum].conn_fd < 0 )
-+        {
-+            perror( urls[url_num].url_str );
-+            return;
-+        }
-+
-+    /* Set the file descriptor to no-delay mode. */
-+    flags = fcntl( connections[cnum].conn_fd, F_GETFL, 0 );
-+    if ( flags == -1 )
-+        {
-+            perror( urls[url_num].url_str );
-+            (void) close( connections[cnum].conn_fd );
-+            return;
-+        }
-+    if ( fcntl( connections[cnum].conn_fd, F_SETFL, flags | O_NDELAY ) < 0 )
-+        {
-+            perror( urls[url_num].url_str );
-+            (void) close( connections[cnum].conn_fd );
-+            return;
-+        }
-+
-+    if ( num_sips > 0 )
-+        {
-+            /* Try a random source IP address. */
-+            sip_num = ( (unsigned long) random() ) % ( (unsigned int) num_sips );
-+            if ( bind(
-+                      connections[cnum].conn_fd,
-+                      (struct sockaddr*) &sips[sip_num].sa,
-+                      sizeof(sips[sip_num].sa) ) < 0 )
-+                {
-+                    perror( "binding local address" );
-+                    (void) close( connections[cnum].conn_fd );
-+                    return;
-+                }
-+        }
-+
-+    /* Connect to the host. */
-+    connections[cnum].sa_len = urls[url_num].sa_len;
-+    (void) memmove(
-+                   (void*) &connections[cnum].sa, (void*) &urls[url_num].sa,
-+                   urls[url_num].sa_len );
-+    connections[cnum].connect_at = *nowP;
-+    if ( connect(
-+                 connections[cnum].conn_fd,
-+                 (struct sockaddr*) &connections[cnum].sa,
-+                 connections[cnum].sa_len ) < 0 )
-+        {
-+            if ( errno == EINPROGRESS )
-+                {
-+                    connections[cnum].conn_state = CNST_CONNECTING;
-+                    return;
-+                }
-+            else
-+                {
-+                    perror( urls[url_num].url_str );
-+                    (void) close( connections[cnum].conn_fd );
-+                    return;
-+                }
-+        }
-+
-+    /* Connect succeeded instantly, so handle it now. */
-+    (void) gettimeofday( nowP, (struct timezone*) 0 );
-+    handle_connect( cnum, nowP, 0 );
-+}
-+
-+
-+static void
-+handle_connect( int cnum, struct timeval* nowP, int double_check )
-+{
-+    int url_num;
-+    char buf[5000];
-+    int r;
-+    unsigned bytes;
-+
-+    url_num = connections[cnum].url_num;
-+    if ( double_check )
-+        {
-+            /* Check to make sure the non-blocking connect succeeded. */
-+            int err;
-+            socklen_t errlen;
-+
-+            if ( connect(
-+                         connections[cnum].conn_fd,
-+                         (struct sockaddr*) &connections[cnum].sa,
-+                         connections[cnum].sa_len ) < 0 )
-+                {
-+                    switch ( errno )
-+                        {
-+                        case EISCONN:
-+                            /* Ok! */
-+                            break;
-+                        case EINVAL:
-+                            errlen = sizeof(err);
-+                            if ( getsockopt( connections[cnum].conn_fd, SOL_SOCKET, SO_ERROR, (void*) &err, &errlen ) < 0 )
-+                                (void) fprintf(
-+                                               stderr, "%s: unknown connect error\n",
-+                                               urls[url_num].url_str );
-+                            else
-+                                (void) fprintf(
-+                                               stderr, "%s: %s\n", urls[url_num].url_str,
-+                                               strerror( err ) );
-+                            close_connection( cnum );
-+                            return;
-+                        default:
-+                            perror( urls[url_num].url_str );
-+                            close_connection( cnum );
-+                            return;
-+                        }
-+                }
-+        }
-+#ifdef USE_SSL
-+    if ( urls[url_num].protocol == PROTO_HTTPS )
-+        {
-+            int flags;
-+
-+            /* Make SSL connection. */
-+            if ( ssl_ctx == (SSL_CTX*) 0 )
-+                {
-+                    SSL_load_error_strings();
-+                    SSLeay_add_ssl_algorithms();
-+                    ssl_ctx = SSL_CTX_new( SSLv23_client_method() );
-+                    if ( cipher != (char*) 0 )
-+                        {
-+                            if ( ! SSL_CTX_set_cipher_list( ssl_ctx, cipher ) )
-+                                {
-+                                    (void) fprintf(
-+                                                   stderr, "%s: cannot set cipher list\n", argv0 );
-+                                    ERR_print_errors_fp( stderr );
-+                                    close_connection( cnum );
-+                                    return;
-+                                }
-+                        }
-+                }
-+            if ( ! RAND_status() )
-+                {
-+                    unsigned char bytes[1024];
-+                    int i;
-+                    for ( i = 0; i < sizeof(bytes); ++i )
-+                        bytes[i] = random() % 0xff;
-+                    RAND_seed( bytes, sizeof(bytes) );
-+                }
-+            flags = fcntl( connections[cnum].conn_fd, F_GETFL, 0 );
-+            if ( flags != -1 )
-+                (void) fcntl(
-+                             connections[cnum].conn_fd, F_SETFL, flags & ~ (int) O_NDELAY );
-+            connections[cnum].ssl = SSL_new( ssl_ctx );
-+            SSL_set_fd( connections[cnum].ssl, connections[cnum].conn_fd );
-+            r = SSL_connect( connections[cnum].ssl );
-+            if ( r <= 0 )
-+                {
-+                    (void) fprintf(
-+                                   stderr, "%s: SSL connection failed - %d\n", argv0, r );
-+                    ERR_print_errors_fp( stderr );
-+                    close_connection( cnum );
-+                    return;
-+                }
-+        }
-+#endif
-+    connections[cnum].did_connect = 1;
-+
-+    /* Format the request. */
-+    if ( do_proxy )
-+        {
-+#ifdef USE_SSL
-+            bytes = snprintf(
-+                             buf, sizeof(buf), "GET %s://%s:%d%s HTTP/1.0\r\n",
-+                             urls[url_num].protocol == PROTO_HTTPS ? "https" : "http",
-+                             urls[url_num].hostname, (int) urls[url_num].port,
-+                             urls[url_num].filename );
-+#else
-+            bytes = snprintf(
-+                             buf, sizeof(buf), "GET http://%s:%d%s HTTP/1.0\r\n",
-+                             urls[url_num].hostname, (int) urls[url_num].port,
-+                             urls[url_num].filename );
-+#endif
-+        }
-+    else
-+        bytes = snprintf(
-+                         buf, sizeof(buf), "GET %s HTTP/1.0\r\n",
-+                         urls[url_num].filename );
-+    bytes += snprintf(
-+                      &buf[bytes], sizeof(buf) - bytes, "Host: %s\r\n",
-+                      urls[url_num].hostname );
-+    bytes += snprintf(
-+                      &buf[bytes], sizeof(buf) - bytes, "User-Agent: %s\r\n", VERSION );
-+    bytes += snprintf( &buf[bytes], sizeof(buf) - bytes, "\r\n" );
-+
-+    if (bytes >= sizeof(buf)-1) {
-+        (void) fprintf(
-+                       stderr, "request skipped, too long: %s\n", urls[url_num].filename );
-+        close_connection( cnum );
-+        return;
-+    }
-+
-+    /* Send the request. */
-+    connections[cnum].request_at = *nowP;
-+#ifdef USE_SSL
-+    if ( urls[url_num].protocol == PROTO_HTTPS )
-+        r = SSL_write( connections[cnum].ssl, buf, bytes );
-+    else
-+        r = write( connections[cnum].conn_fd, buf, bytes );
-+#else
-+    r = write( connections[cnum].conn_fd, buf, bytes );
-+#endif
-+    if ( r < 0 )
-+        {
-+            perror( urls[url_num].url_str );
-+            close_connection( cnum );
-+            return;
-+        }
-+    connections[cnum].conn_state = CNST_HEADERS;
-+    connections[cnum].header_state = HDST_LINE1_PROTOCOL;
-+}
-+
-+
-+static void
-+handle_read( int cnum, struct timeval* nowP )
-+{
-+    char buf[30000];    /* must be larger than throttle / 2 */
-+    int bytes_to_read, bytes_read, bytes_handled;
-+    float elapsed;
-+    ClientData client_data;
-+    register long checksum;
-+
-+    tmr_reset( nowP, connections[cnum].idle_timer );
-+
-+    if ( do_throttle )
-+        bytes_to_read = throttle / 2.0;
-+    else
-+        bytes_to_read = sizeof(buf);
-+    if ( ! connections[cnum].did_response )
-+        {
-+            connections[cnum].did_response = 1;
-+            connections[cnum].response_at = *nowP;
-+        }
-+#ifdef USE_SSL
-+    if ( urls[connections[cnum].url_num].protocol == PROTO_HTTPS )
-+        bytes_read = SSL_read( connections[cnum].ssl, buf, bytes_to_read );
-+    else
-+        bytes_read = read( connections[cnum].conn_fd, buf, bytes_to_read );
-+#else
-+    bytes_read = read( connections[cnum].conn_fd, buf, bytes_to_read );
-+#endif
-+    if ( bytes_read <= 0 )
-+        {
-+            close_connection( cnum );
-+            return;
-+        }
-+
-+    for ( bytes_handled = 0; bytes_handled < bytes_read; )
-+        {
-+            switch ( connections[cnum].conn_state )
-+                {
-+                case CNST_HEADERS:
-+                    /* State machine to read until we reach the file part.  Looks for
-+                    ** Content-Length header too.
-+                    */
-+                    for ( ; bytes_handled < bytes_read && connections[cnum].conn_state == CNST_HEADERS; ++bytes_handled )
-+                        {
-+                            switch ( connections[cnum].header_state )
-+                                {
-+
-+                                case HDST_LINE1_PROTOCOL:
-+                                    switch ( buf[bytes_handled] )
-+                                        {
-+                                        case ' ': case '\t':
-+                                            connections[cnum].header_state = HDST_LINE1_WHITESPACE;
-+                                            break;
-+                                        case '\n':
-+                                            connections[cnum].header_state = HDST_LF;
-+                                            break;
-+                                        case '\r':
-+                                            connections[cnum].header_state = HDST_CR;
-+                                            break;
-+                                        }
-+                                    break;
-+
-+                                case HDST_LINE1_WHITESPACE:
-+                                    switch ( buf[bytes_handled] )
-+                                        {
-+                                        case ' ': case '\t':
-+                                            break;
-+                                        case '0': case '1': case '2': case '3': case '4':
-+                                        case '5': case '6': case '7': case '8': case '9':
-+                                            connections[cnum].http_status =
-+                                                buf[bytes_handled] - '0';
-+                                            connections[cnum].header_state = HDST_LINE1_STATUS;
-+                                            break;
-+                                        case '\n':
-+                                            connections[cnum].header_state = HDST_LF;
-+                                            break;
-+                                        case '\r':
-+                                            connections[cnum].header_state = HDST_CR;
-+                                            break;
-+                                        default:
-+                                            connections[cnum].header_state = HDST_TEXT;
-+                                            break;
-+                                        }
-+                                    break;
-+
-+                                case HDST_LINE1_STATUS:
-+                                    switch ( buf[bytes_handled] )
-+                                        {
-+                                        case '0': case '1': case '2': case '3': case '4':
-+                                        case '5': case '6': case '7': case '8': case '9':
-+                                            connections[cnum].http_status =
-+                                                connections[cnum].http_status * 10 +
-+                                                buf[bytes_handled] - '0';
-+                                            break;
-+                                        case '\n':
-+                                            connections[cnum].header_state = HDST_LF;
-+                                            break;
-+                                        case '\r':
-+                                            connections[cnum].header_state = HDST_CR;
-+                                            break;
-+                                        default:
-+                                            connections[cnum].header_state = HDST_TEXT;
-+                                            break;
-+                                        }
-+                                    break;
-+
-+                                case HDST_BOL:
-+                                    switch ( buf[bytes_handled] )
-+                                        {
-+                                        case '\n':
-+                                            connections[cnum].header_state = HDST_LF;
-+                                            break;
-+                                        case '\r':
-+                                            connections[cnum].header_state = HDST_CR;
-+                                            break;
-+                                        case 'C': case 'c':
-+                                            connections[cnum].header_state = HDST_C;
-+                                            break;
-+                                        default:
-+                                            connections[cnum].header_state = HDST_TEXT;
-+                                            break;
-+                                        }
-+                                    break;
-+
-+                                case HDST_TEXT:
-+                                    switch ( buf[bytes_handled] )
-+                                        {
-+                                        case '\n':
-+                                            connections[cnum].header_state = HDST_LF;
-+                                            break;
-+                                        case '\r':
-+                                            connections[cnum].header_state = HDST_CR;
-+                                            break;
-+                                        default:
-+                                            break;
-+                                        }
-+                                    break;
-+
-+                                case HDST_LF:
-+                                    switch ( buf[bytes_handled] )
-+                                        {
-+                                        case '\n':
-+                                            connections[cnum].conn_state = CNST_READING;
-+                                            break;
-+                                        case '\r':
-+                                            connections[cnum].header_state = HDST_CR;
-+                                            break;
-+                                        case 'C': case 'c':
-+                                            connections[cnum].header_state = HDST_C;
-+                                            break;
-+                                        default:
-+                                            connections[cnum].header_state = HDST_TEXT;
-+                                            break;
-+                                        }
-+                                    break;
-+
-+                                case HDST_CR:
-+                                    switch ( buf[bytes_handled] )
-+                                        {
-+                                        case '\n':
-+                                            connections[cnum].header_state = HDST_CRLF;
-+                                            break;
-+                                        case '\r':
-+                                            connections[cnum].conn_state = CNST_READING;
-+                                            break;
-+                                        case 'C': case 'c':
-+                                            connections[cnum].header_state = HDST_C;
-+                                            break;
-+                                        default:
-+                                            connections[cnum].header_state = HDST_TEXT;
-+                                            break;
-+                                        }
-+                                    break;
-+
-+                                case HDST_CRLF:
-+                                    switch ( buf[bytes_handled] )
-+                                        {
-+                                        case '\n':
-+                                            connections[cnum].conn_state = CNST_READING;
-+                                            break;
-+                                        case '\r':
-+                                            connections[cnum].header_state = HDST_CRLFCR;
-+                                            break;
-+                                        case 'C': case 'c':
-+                                            connections[cnum].header_state = HDST_C;
-+                                            break;
-+                                        default:
-+                                            connections[cnum].header_state = HDST_TEXT;
-+                                            break;
-+                                        }
-+                                    break;
-+
-+                                case HDST_CRLFCR:
-+                                    switch ( buf[bytes_handled] )
-+                                        {
-+                                        case '\n': case '\r':
-+                                            connections[cnum].conn_state = CNST_READING;
-+                                            break;
-+                                        case 'C': case 'c':
-+                                            connections[cnum].header_state = HDST_C;
-+                                            break;
-+                                        default:
-+                                            connections[cnum].header_state = HDST_TEXT;
-+                                            break;
-+                                        }
-+                                    break;
-+
-+                                case HDST_C:
-+                                    switch ( buf[bytes_handled] )
-+                                        {
-+                                        case 'O': case 'o':
-+                                            connections[cnum].header_state = HDST_CO;
-+                                            break;
-+                                        case '\n':
-+                                            connections[cnum].header_state = HDST_LF;
-+                                            break;
-+                                        case '\r':
-+                                            connections[cnum].header_state = HDST_CR;
-+                                            break;
-+                                        default:
-+                                            connections[cnum].header_state = HDST_TEXT;
-+                                            break;
-+                                        }
-+                                    break;
-+
-+                                case HDST_CO:
-+                                    switch ( buf[bytes_handled] )
-+                                        {
-+                                        case 'N': case 'n':
-+                                            connections[cnum].header_state = HDST_CON;
-+                                            break;
-+                                        case '\n':
-+                                            connections[cnum].header_state = HDST_LF;
-+                                            break;
-+                                        case '\r':
-+                                            connections[cnum].header_state = HDST_CR;
-+                                            break;
-+                                        default:
-+                                            connections[cnum].header_state = HDST_TEXT;
-+                                            break;
-+                                        }
-+                                    break;
-+
-+                                case HDST_CON:
-+                                    switch ( buf[bytes_handled] )
-+                                        {
-+                                        case 'T': case 't':
-+                                            connections[cnum].header_state = HDST_CONT;
-+                                            break;
-+                                        case '\n':
-+                                            connections[cnum].header_state = HDST_LF;
-+                                            break;
-+                                        case '\r':
-+                                            connections[cnum].header_state = HDST_CR;
-+                                            break;
-+                                        default:
-+                                            connections[cnum].header_state = HDST_TEXT;
-+                                            break;
-+                                        }
-+                                    break;
-+
-+                                case HDST_CONT:
-+                                    switch ( buf[bytes_handled] )
-+                                        {
-+                                        case 'E': case 'e':
-+                                            connections[cnum].header_state = HDST_CONTE;
-+                                            break;
-+                                        case '\n':
-+                                            connections[cnum].header_state = HDST_LF;
-+                                            break;
-+                                        case '\r':
-+                                            connections[cnum].header_state = HDST_CR;
-+                                            break;
-+                                        default:
-+                                            connections[cnum].header_state = HDST_TEXT;
-+                                            break;
-+                                        }
-+                                    break;
-+
-+                                case HDST_CONTE:
-+                                    switch ( buf[bytes_handled] )
-+                                        {
-+                                        case 'N': case 'n':
-+                                            connections[cnum].header_state = HDST_CONTEN;
-+                                            break;
-+                                        case '\n':
-+                                            connections[cnum].header_state = HDST_LF;
-+                                            break;
-+                                        case '\r':
-+                                            connections[cnum].header_state = HDST_CR;
-+                                            break;
-+                                        default:
-+                                            connections[cnum].header_state = HDST_TEXT;
-+                                            break;
-+                                        }
-+                                    break;
-+
-+                                case HDST_CONTEN:
-+                                    switch ( buf[bytes_handled] )
-+                                        {
-+                                        case 'T': case 't':
-+                                            connections[cnum].header_state = HDST_CONTENT;
-+                                            break;
-+                                        case '\n':
-+                                            connections[cnum].header_state = HDST_LF;
-+                                            break;
-+                                        case '\r':
-+                                            connections[cnum].header_state = HDST_CR;
-+                                            break;
-+                                        default:
-+                                            connections[cnum].header_state = HDST_TEXT;
-+                                            break;
-+                                        }
-+                                    break;
-+
-+                                case HDST_CONTENT:
-+                                    switch ( buf[bytes_handled] )
-+                                        {
-+                                        case '-':
-+                                            connections[cnum].header_state = HDST_CONTENT_;
-+                                            break;
-+                                        case '\n':
-+                                            connections[cnum].header_state = HDST_LF;
-+                                            break;
-+                                        case '\r':
-+                                            connections[cnum].header_state = HDST_CR;
-+                                            break;
-+                                        default:
-+                                            connections[cnum].header_state = HDST_TEXT;
-+                                            break;
-+                                        }
-+                                    break;
-+
-+                                case HDST_CONTENT_:
-+                                    switch ( buf[bytes_handled] )
-+                                        {
-+                                        case 'L': case 'l':
-+                                            connections[cnum].header_state = HDST_CONTENT_L;
-+                                            break;
-+                                        case '\n':
-+                                            connections[cnum].header_state = HDST_LF;
-+                                            break;
-+                                        case '\r':
-+                                            connections[cnum].header_state = HDST_CR;
-+                                            break;
-+                                        default:
-+                                            connections[cnum].header_state = HDST_TEXT;
-+                                            break;
-+                                        }
-+                                    break;
-+
-+                                case HDST_CONTENT_L:
-+                                    switch ( buf[bytes_handled] )
-+                                        {
-+                                        case 'E': case 'e':
-+                                            connections[cnum].header_state = HDST_CONTENT_LE;
-+                                            break;
-+                                        case '\n':
-+                                            connections[cnum].header_state = HDST_LF;
-+                                            break;
-+                                        case '\r':
-+                                            connections[cnum].header_state = HDST_CR;
-+                                            break;
-+                                        default:
-+                                            connections[cnum].header_state = HDST_TEXT;
-+                                            break;
-+                                        }
-+                                    break;
-+
-+                                case HDST_CONTENT_LE:
-+                                    switch ( buf[bytes_handled] )
-+                                        {
-+                                        case 'N': case 'n':
-+                                            connections[cnum].header_state = HDST_CONTENT_LEN;
-+                                            break;
-+                                        case '\n':
-+                                            connections[cnum].header_state = HDST_LF;
-+                                            break;
-+                                        case '\r':
-+                                            connections[cnum].header_state = HDST_CR;
-+                                            break;
-+                                        default:
-+                                            connections[cnum].header_state = HDST_TEXT;
-+                                            break;
-+                                        }
-+                                    break;
-+
-+                                case HDST_CONTENT_LEN:
-+                                    switch ( buf[bytes_handled] )
-+                                        {
-+                                        case 'G': case 'g':
-+                                            connections[cnum].header_state = HDST_CONTENT_LENG;
-+                                            break;
-+                                        case '\n':
-+                                            connections[cnum].header_state = HDST_LF;
-+                                            break;
-+                                        case '\r':
-+                                            connections[cnum].header_state = HDST_CR;
-+                                            break;
-+                                        default:
-+                                            connections[cnum].header_state = HDST_TEXT;
-+                                            break;
-+                                        }
-+                                    break;
-+
-+                                case HDST_CONTENT_LENG:
-+                                    switch ( buf[bytes_handled] )
-+                                        {
-+                                        case 'T': case 't':
-+                                            connections[cnum].header_state = HDST_CONTENT_LENGT;
-+                                            break;
-+                                        case '\n':
-+                                            connections[cnum].header_state = HDST_LF;
-+                                            break;
-+                                        case '\r':
-+                                            connections[cnum].header_state = HDST_CR;
-+                                            break;
-+                                        default:
-+                                            connections[cnum].header_state = HDST_TEXT;
-+                                            break;
-+                                        }
-+                                    break;
-+
-+                                case HDST_CONTENT_LENGT:
-+                                    switch ( buf[bytes_handled] )
-+                                        {
-+                                        case 'H': case 'h':
-+                                            connections[cnum].header_state = HDST_CONTENT_LENGTH;
-+                                            break;
-+                                        case '\n':
-+                                            connections[cnum].header_state = HDST_LF;
-+                                            break;
-+                                        case '\r':
-+                                            connections[cnum].header_state = HDST_CR;
-+                                            break;
-+                                        default:
-+                                            connections[cnum].header_state = HDST_TEXT;
-+                                            break;
-+                                        }
-+                                    break;
-+
-+                                case HDST_CONTENT_LENGTH:
-+                                    switch ( buf[bytes_handled] )
-+                                        {
-+                                        case ':':
-+                                            connections[cnum].header_state = HDST_CONTENT_LENGTH_COLON;
-+                                            break;
-+                                        case '\n':
-+                                            connections[cnum].header_state = HDST_LF;
-+                                            break;
-+                                        case '\r':
-+                                            connections[cnum].header_state = HDST_CR;
-+                                            break;
-+                                        default:
-+                                            connections[cnum].header_state = HDST_TEXT;
-+                                            break;
-+                                        }
-+                                    break;
-+
-+                                case HDST_CONTENT_LENGTH_COLON:
-+                                    switch ( buf[bytes_handled] )
-+                                        {
-+                                        case ' ': case '\t':
-+                                            connections[cnum].header_state = HDST_CONTENT_LENGTH_COLON_WHITESPACE;
-+                                            break;
-+                                        case '\n':
-+                                            connections[cnum].header_state = HDST_LF;
-+                                            break;
-+                                        case '\r':
-+                                            connections[cnum].header_state = HDST_CR;
-+                                            break;
-+                                        default:
-+                                            connections[cnum].header_state = HDST_TEXT;
-+                                            break;
-+                                        }
-+                                    break;
-+
-+                                case HDST_CONTENT_LENGTH_COLON_WHITESPACE:
-+                                    switch ( buf[bytes_handled] )
-+                                        {
-+                                        case ' ': case '\t':
-+                                            break;
-+                                        case '0': case '1': case '2': case '3': case '4':
-+                                        case '5': case '6': case '7': case '8': case '9':
-+                                            connections[cnum].content_length = buf[bytes_handled] - '0';
-+                                            connections[cnum].header_state = HDST_CONTENT_LENGTH_COLON_WHITESPACE_NUM;
-+                                            break;
-+                                        case '\n':
-+                                            connections[cnum].header_state = HDST_LF;
-+                                            break;
-+                                        case '\r':
-+                                            connections[cnum].header_state = HDST_CR;
-+                                            break;
-+                                        default:
-+                                            connections[cnum].header_state = HDST_TEXT;
-+                                            break;
-+                                        }
-+                                    break;
-+
-+                                case HDST_CONTENT_LENGTH_COLON_WHITESPACE_NUM:
-+                                    switch ( buf[bytes_handled] )
-+                                        {
-+                                        case '0': case '1': case '2': case '3': case '4':
-+                                        case '5': case '6': case '7': case '8': case '9':
-+                                            connections[cnum].content_length =
-+                                                connections[cnum].content_length * 10 +
-+                                                buf[bytes_handled] - '0';
-+                                            break;
-+                                        case '\n':
-+                                            connections[cnum].header_state = HDST_LF;
-+                                            break;
-+                                        case '\r':
-+                                            connections[cnum].header_state = HDST_CR;
-+                                            break;
-+                                        default:
-+                                            connections[cnum].header_state = HDST_TEXT;
-+                                            break;
-+                                        }
-+                                    break;
-+
-+                                }
-+                        }
-+                    break;
-+
-+                case CNST_READING:
-+                    connections[cnum].bytes += bytes_read - bytes_handled;
-+                    if ( do_throttle )
-+                        {
-+                            /* Check if we're reading too fast. */
-+                            elapsed = delta_timeval( &connections[cnum].started_at, nowP ) / 1000000.0;
-+                            if ( elapsed > 0.01 && connections[cnum].bytes / elapsed > throttle )
-+                                {
-+                                    connections[cnum].conn_state  = CNST_PAUSING;
-+                                    client_data.i = cnum;
-+                                    connections[cnum].wakeup_timer = tmr_create(
-+                                                                                nowP, wakeup_connection, client_data, 1000L, 0 );
-+                                }
-+                        }
-+                    if ( do_checksum )
-+                        {
-+                            checksum = connections[cnum].checksum;
-+                            for ( ; bytes_handled < bytes_read; ++bytes_handled )
-+                                {
-+                                    if ( checksum & 1 )
-+                                        checksum = ( checksum >> 1 ) + 0x8000;
-+                                    else
-+                                        checksum >>= 1;
-+                                    checksum += buf[bytes_handled];
-+                                    checksum &= 0xffff;
-+                                }
-+                            connections[cnum].checksum = checksum;
-+                        }
-+                    else
-+                        bytes_handled = bytes_read;
-+
-+                    if ( connections[cnum].content_length != -1 &&
-+                         connections[cnum].bytes >= connections[cnum].content_length )
-+                        {
-+                            close_connection( cnum );
-+                            return;
-+                        }
-+
-+                    break;
-+                }
-+        }
-+}
-+
-+
-+static void
-+idle_connection( ClientData client_data, struct timeval* nowP )
-+{
-+    int cnum;
-+
-+    cnum = client_data.i;
-+    connections[cnum].idle_timer = (Timer*) 0;
-+    (void) fprintf(
-+                   stderr, "%s: timed out\n", urls[connections[cnum].url_num].url_str );
-+    close_connection( cnum );
-+    ++total_timeouts;
-+}
-+
-+
-+static void
-+wakeup_connection( ClientData client_data, struct timeval* nowP )
-+{
-+    int cnum;
-+
-+    cnum = client_data.i;
-+    connections[cnum].wakeup_timer = (Timer*) 0;
-+    connections[cnum].conn_state = CNST_READING;
-+}
-+
-+
-+static void
-+close_connection( int cnum )
-+{
-+    int url_num;
-+    long long connect_usecs = -1;
-+    long long response_usecs = -1;
-+    int sock_port = -1;
-+
-+    if (1) {
-+        struct sockaddr_in sa;
-+        socklen_t sa_len = sizeof(sa);
-+        if (getsockname(connections[cnum].conn_fd, (struct sockaddr *)&sa, &sa_len) == 0)
-+            sock_port = ntohs(sa.sin_port);
-+        else printf("getsockname: %s\n", strerror(errno));
-+    }
-+
-+#ifdef USE_SSL
-+    if ( urls[connections[cnum].url_num].protocol == PROTO_HTTPS )
-+        SSL_free( connections[cnum].ssl );
-+#endif
-+    (void) close( connections[cnum].conn_fd );
++  if (argn + 1 != argc)
++    usage ();
++  if (start == START_NONE || end == END_NONE)
++    usage ();
++  if (do_jitter && start != START_RATE)
++    usage ();
++  url_file = argv[argn];
++
++  /* Read in and parse the URLs. */
++  read_url_file (url_file);
++
++  /* Read in the source IP file, if specified. */
++  if (sip_file != (char *) 0)
++    read_sip_file (sip_file);
++
++  /* Initialize the connections table. */
++  if (start == START_PARALLEL)
++    max_connections = start_parallel;
++  connections =
++    (connection *) malloc_check (max_connections * sizeof (connection));
++  for (cnum = 0; cnum < max_connections; ++cnum)
 +    connections[cnum].conn_state = CNST_FREE;
-+    if ( connections[cnum].idle_timer != (Timer*) 0 )
-+        tmr_cancel( connections[cnum].idle_timer );
-+    if ( connections[cnum].wakeup_timer != (Timer*) 0 )
-+        tmr_cancel( connections[cnum].wakeup_timer );
-+    --num_connections;
-+    ++fetches_completed;
-+    total_bytes += connections[cnum].bytes;
-+    if ( connections[cnum].did_connect )
-+        {
-+            connect_usecs = delta_timeval(
-+                                          &connections[cnum].connect_at, &connections[cnum].request_at );
-+            total_connect_usecs += connect_usecs;
-+            max_connect_usecs = max( max_connect_usecs, connect_usecs );
-+            min_connect_usecs = min( min_connect_usecs, connect_usecs );
-+            ++connects_completed;
-+        }
-+    if ( connections[cnum].did_response )
-+        {
-+            response_usecs = delta_timeval(
-+                                           &connections[cnum].request_at, &connections[cnum].response_at );
-+            total_response_usecs += response_usecs;
-+            max_response_usecs = max( max_response_usecs, response_usecs );
-+            min_response_usecs = min( min_response_usecs, response_usecs );
-+            ++responses_completed;
-+        }
-+    if ( connections[cnum].http_status >= 0 && connections[cnum].http_status <= 999 )
-+        ++http_status_counts[connections[cnum].http_status];
++  num_connections = max_parallel = 0;
 +
-+    /* log slow connections */
-+    if (1 && connect_usecs > log_connect_usecs_thresh) {
-+        printf("%d\t%d\t%d\t%lld\t%lld\t%d\n",
-+               connections[cnum].start_seqn,
-+               0,
-+               sock_port,
-+               connect_usecs, response_usecs,
-+               connections[cnum].http_status
-+               );
-+        /* automatically use this as the new threshold */
-+        log_connect_usecs_thresh = connect_usecs;
++  /* Initialize the HTTP status-code histogram. */
++  for (i = 0; i < 1000; ++i)
++    http_status_counts[i] = 0;
++
++  /* Initialize the statistics. */
++  fetches_started = 0;
++  connects_completed = 0;
++  responses_completed = 0;
++  fetches_completed = 0;
++  total_bytes = 0;
++  total_connect_usecs = 0;
++  max_connect_usecs = 0;
++  min_connect_usecs = 1000000000L;
++  total_response_usecs = 0;
++  max_response_usecs = 0;
++  min_response_usecs = 1000000000L;
++  total_timeouts = 0;
++  total_badbytes = 0;
++  total_badchecksums = 0;
++
++  /* Initialize the random number generator. */
++  if (seed_arg)
++    {
++      if (do_verbose)
++	(void) fprintf (stderr, "Seed %d\n", atoi (seed_arg));
++      srandom (atoi (seed_arg));
++    }
++  else
++    {
++#ifdef HAVE_SRANDOMDEV
++      srandomdev ();
++#else
++      srandom ((int) time ((time_t *) 0) ^ getpid ());
++#endif
 +    }
 +
-+    url_num = connections[cnum].url_num;
-+    if ( do_checksum )
-+        {
-+            if ( ! urls[url_num].got_checksum )
-+                {
-+                    urls[url_num].checksum = connections[cnum].checksum;
-+                    urls[url_num].got_checksum = 1;
-+                }
-+            else
-+                {
-+                    if ( connections[cnum].checksum != urls[url_num].checksum )
-+                        {
-+                            (void) fprintf(
-+                                           stderr, "%s: checksum wrong\n", urls[url_num].url_str );
-+                            ++total_badchecksums;
-+                        }
-+                }
-+        }
-+    else
-+        {
-+            if ( ! urls[url_num].got_bytes )
-+                {
-+                    urls[url_num].bytes = connections[cnum].bytes;
-+                    urls[url_num].got_bytes = 1;
-+                }
-+            else
-+                {
-+                    if ( connections[cnum].bytes != urls[url_num].bytes )
-+                        {
-+                            (void) fprintf(
-+                                           stderr, "%s: byte count wrong\n", urls[url_num].url_str );
-+                            ++total_badbytes;
-+                        }
-+                }
-+        }
++  /* Initialize the rest. */
++  tmr_init ();
++  (void) gettimeofday (&now, (struct timezone *) 0);
++  start_at = now;
++  if (do_verbose)
++    (void) tmr_create (&now, progress_report, JunkClientData,
++		       PROGRESS_SECS * 1000L, 1);
++  if (start == START_RATE)
++    {
++      start_interval = 1000L / start_rate;
++      if (do_jitter)
++	{
++	  low_interval = start_interval * 9 / 10;
++	  high_interval = start_interval * 11 / 10;
++	  range_interval = high_interval - low_interval + 1;
++	}
++      (void) tmr_create (&now, start_timer, JunkClientData, start_interval,
++			 !do_jitter);
++    }
++  if (end == END_SECONDS)
++    (void) tmr_create (&now, end_timer, JunkClientData, end_seconds * 1000L,
++		       0);
++  (void) signal (SIGPIPE, SIG_IGN);
++
++  /* Main loop. */
++  for (;;)
++    {
++      if (end == END_FETCHES && fetches_completed >= end_fetches)
++	finish (&now);
++
++      if (start == START_PARALLEL)
++	{
++	  /* See if we need to start any new connections; but at most 10. */
++	  for (i = 0;
++	       i < 10 &&
++	       num_connections < start_parallel &&
++	       (end != END_FETCHES || fetches_started < end_fetches); ++i)
++	    {
++	      start_connection (&now);
++	      (void) gettimeofday (&now, (struct timezone *) 0);
++	      tmr_run (&now);
++	    }
++	}
++
++      /* Build the fdsets. */
++      FD_ZERO (&rfdset);
++      FD_ZERO (&wfdset);
++      for (cnum = 0; cnum < max_connections; ++cnum)
++	switch (connections[cnum].conn_state)
++	  {
++	  case CNST_CONNECTING:
++	    FD_SET (connections[cnum].conn_fd, &wfdset);
++	    break;
++	  case CNST_HEADERS:
++	  case CNST_READING:
++	    FD_SET (connections[cnum].conn_fd, &rfdset);
++	    break;
++	  }
++      r =
++	select (FD_SETSIZE, &rfdset, &wfdset, (fd_set *) 0,
++		tmr_timeout (&now));
++      if (r < 0)
++	{
++	  perror ("select");
++	  exit (1);
++	}
++      (void) gettimeofday (&now, (struct timezone *) 0);
++
++      /* Service them. */
++      for (cnum = 0; cnum < max_connections; ++cnum)
++	switch (connections[cnum].conn_state)
++	  {
++	  case CNST_CONNECTING:
++	    if (FD_ISSET (connections[cnum].conn_fd, &wfdset))
++	      handle_connect (cnum, &now, 1);
++	    break;
++	  case CNST_HEADERS:
++	  case CNST_READING:
++	    if (FD_ISSET (connections[cnum].conn_fd, &rfdset))
++	      handle_read (cnum, &now);
++	    break;
++	  }
++      /* And run the timers. */
++      tmr_run (&now);
++    }
++
++  /* NOT_REACHED */
 +}
 +
 +
 +static void
-+progress_report( ClientData client_data, struct timeval* nowP )
++usage (void)
 +{
-+    float elapsed;
-+
-+    elapsed = delta_timeval( &start_at, nowP ) / 1000000.0;
-+    (void) fprintf( stderr,
-+                    "--- %g secs, %d fetches started, %d completed, %d current\n",
-+                    elapsed, fetches_started, fetches_completed, num_connections );
-+}
-+
-+
-+static void
-+start_timer( ClientData client_data, struct timeval* nowP )
-+{
-+    start_connection( nowP );
-+    if ( do_jitter )
-+        (void) tmr_create(
-+                          nowP, start_timer, JunkClientData,
-+                          (long) ( random() % range_interval ) + low_interval, 0 );
-+}
-+
-+
-+static void
-+end_timer( ClientData client_data, struct timeval* nowP )
-+{
-+    finish( nowP );
-+}
-+
-+
-+static void
-+finish( struct timeval* nowP )
-+{
-+    float elapsed;
-+    int i;
-+
-+    /* Report statistics. */
-+    elapsed = delta_timeval( &start_at, nowP ) / 1000000.0;
-+    (void) printf(
-+                  "%d fetches, %d max parallel, %g bytes, in %g seconds\n",
-+                  fetches_completed, max_parallel, (float) total_bytes, elapsed );
-+    if ( fetches_completed > 0 )
-+        (void) printf(
-+                      "%g mean bytes/connection\n",
-+                      (float) total_bytes / (float) fetches_completed );
-+    if ( elapsed > 0.01 )
-+        {
-+            (void) printf(
-+                          "%g fetches/sec, %g bytes/sec\n",
-+                          (float) fetches_completed / elapsed,
-+                          (float) total_bytes / elapsed );
-+        }
-+    if ( connects_completed > 0 )
-+        (void) printf(
-+                      "msecs/connect: %g mean, %g max, %g min\n",
-+                      (float) total_connect_usecs / (float) connects_completed / 1000.0,
-+                      (float) max_connect_usecs / 1000.0,
-+                      (float) min_connect_usecs / 1000.0 );
-+    if ( responses_completed > 0 )
-+        (void) printf(
-+                      "msecs/first-response: %g mean, %g max, %g min\n",
-+                      (float) total_response_usecs / (float) responses_completed / 1000.0,
-+                      (float) max_response_usecs / 1000.0,
-+                      (float) min_response_usecs / 1000.0 );
-+    if ( total_timeouts != 0 )
-+        (void) printf( "%d timeouts\n", total_timeouts );
-+    if ( do_checksum )
-+        {
-+            if ( total_badchecksums != 0 )
-+                (void) printf( "%d bad checksums\n", total_badchecksums );
-+        }
-+    else
-+        {
-+            if ( total_badbytes != 0 )
-+                (void) printf( "%d bad byte counts\n", total_badbytes );
-+        }
-+
-+    (void) printf( "HTTP response codes:\n" );
-+    for ( i = 0; i < 1000; ++i )
-+        if ( http_status_counts[i] > 0 )
-+            (void) printf( "  code %03d -- %d\n", i, http_status_counts[i] );
-+
-+    tmr_destroy();
++  (void) fprintf (stderr,
++		  "usage:  %s [-checksum] [-throttle] [-proxy host:port] [-verbose] [-seed N] [-timeout secs] [-sip sip_file]\n",
++		  argv0);
 +#ifdef USE_SSL
-+    if ( ssl_ctx != (SSL_CTX*) 0 )
-+        SSL_CTX_free( ssl_ctx );
++  (void) fprintf (stderr, "            [-cipher str]\n");
++#endif /* USE_SSL */
++  (void) fprintf (stderr, "            -parallel N | -rate N [-jitter]\n");
++  (void) fprintf (stderr, "            -fetches N | -seconds N\n");
++  (void) fprintf (stderr, "            url_file\n");
++  (void) fprintf (stderr,
++		  "One start specifier, either -parallel or -rate, is required.\n");
++  (void) fprintf (stderr,
++		  "One end specifier, either -fetches or -seconds, is required.\n");
++  exit (1);
++}
++
++
++static void
++read_url_file (char *url_file)
++{
++  FILE *fp;
++  char line[5000], hostname[5000];
++  char *http = "http://";
++  int http_len = strlen (http);
++#ifdef USE_SSL
++  char *https = "https://";
++  int https_len = strlen (https);
 +#endif
-+    exit( 0 );
++  int proto_len, host_len;
++  char *cp;
++
++  fp = fopen (url_file, "r");
++  if (fp == (FILE *) 0)
++    {
++      perror (url_file);
++      exit (1);
++    }
++
++  max_urls = 100;
++  urls = (url *) malloc_check (max_urls * sizeof (url));
++  num_urls = 0;
++  while (fgets (line, sizeof (line), fp) != (char *) 0)
++    {
++      /* Nuke trailing newline. */
++      if (line[strlen (line) - 1] == '\n')
++	line[strlen (line) - 1] = '\0';
++
++      /* Check for room in urls. */
++      if (num_urls >= max_urls)
++	{
++	  max_urls *= 2;
++	  urls =
++	    (url *) realloc_check ((void *) urls, max_urls * sizeof (url));
++	}
++
++      /* Add to table. */
++      urls[num_urls].url_str = strdup_check (line);
++
++      /* Parse it. */
++      if (strncmp (http, line, http_len) == 0)
++	{
++	  proto_len = http_len;
++	  urls[num_urls].protocol = PROTO_HTTP;
++	}
++#ifdef USE_SSL
++      else if (strncmp (https, line, https_len) == 0)
++	{
++	  proto_len = https_len;
++	  urls[num_urls].protocol = PROTO_HTTPS;
++	}
++#endif
++      else
++	{
++	  (void) fprintf (stderr, "%s: unknown protocol - %s\n", argv0, line);
++	  exit (1);
++	}
++      for (cp = line + proto_len;
++	   *cp != '\0' && *cp != ':' && *cp != '/'; ++cp)
++	;
++      host_len = cp - line;
++      host_len -= proto_len;
++      strncpy (hostname, line + proto_len, host_len);
++      hostname[host_len] = '\0';
++      urls[num_urls].hostname = strdup_check (hostname);
++      if (*cp == ':')
++	{
++	  urls[num_urls].port = (unsigned short) atoi (++cp);
++	  while (*cp != '\0' && *cp != '/')
++	    ++cp;
++	}
++      else
++#ifdef USE_SSL
++      if (urls[num_urls].protocol == PROTO_HTTPS)
++	urls[num_urls].port = 443;
++      else
++	urls[num_urls].port = 80;
++#else
++	urls[num_urls].port = 80;
++#endif
++      if (*cp == '\0')
++	urls[num_urls].filename = strdup_check ("/");
++      else
++	urls[num_urls].filename = strdup_check (cp);
++
++      lookup_address (num_urls);
++
++      urls[num_urls].got_bytes = 0;
++      urls[num_urls].got_checksum = 0;
++      ++num_urls;
++    }
++}
++
++
++static void
++lookup_address (int url_num)
++{
++  char *hostname;
++  unsigned short port;
++#ifdef USE_IPV6
++  struct addrinfo hints;
++  char portstr[10];
++  int gaierr;
++  struct addrinfo *ai;
++  struct addrinfo *ai2;
++  struct addrinfo *aiv4;
++  struct addrinfo *aiv6;
++#else /* USE_IPV6 */
++  struct hostent *he;
++#endif /* USE_IPV6 */
++
++  urls[url_num].sa_len = sizeof (urls[url_num].sa);
++  (void) memset ((void *) &urls[url_num].sa, 0, urls[url_num].sa_len);
++
++  if (do_proxy)
++    {
++      hostname = proxy_hostname;
++      port = proxy_port;
++    }
++  else
++    {
++      hostname = urls[url_num].hostname;
++      port = urls[url_num].port;
++    }
++
++#ifdef USE_IPV6
++
++  (void) memset (&hints, 0, sizeof (hints));
++  hints.ai_family = PF_UNSPEC;
++  hints.ai_socktype = SOCK_STREAM;
++  (void) snprintf (portstr, sizeof (portstr), "%d", (int) port);
++  if ((gaierr = getaddrinfo (hostname, portstr, &hints, &ai)) != 0)
++    {
++      (void) fprintf (stderr, "%s: getaddrinfo %s - %s\n", argv0, hostname,
++		      gai_strerror (gaierr));
++      exit (1);
++    }
++
++  /* Find the first IPv4 and IPv6 entries. */
++  aiv4 = (struct addrinfo *) 0;
++  aiv6 = (struct addrinfo *) 0;
++  for (ai2 = ai; ai2 != (struct addrinfo *) 0; ai2 = ai2->ai_next)
++    {
++      switch (ai2->ai_family)
++	{
++	case AF_INET:
++	  if (aiv4 == (struct addrinfo *) 0)
++	    aiv4 = ai2;
++	  break;
++	case AF_INET6:
++	  if (aiv6 == (struct addrinfo *) 0)
++	    aiv6 = ai2;
++	  break;
++	}
++    }
++
++  /* If there's an IPv4 address, use that, otherwise try IPv6. */
++  if (aiv4 != (struct addrinfo *) 0)
++    {
++      if (sizeof (urls[url_num].sa) < aiv4->ai_addrlen)
++	{
++	  (void) fprintf (stderr, "%s - sockaddr too small (%lu < %lu)\n",
++			  hostname, (unsigned long) sizeof (urls[url_num].sa),
++			  (unsigned long) aiv4->ai_addrlen);
++	  exit (1);
++	}
++      urls[url_num].sock_family = aiv4->ai_family;
++      urls[url_num].sock_type = aiv4->ai_socktype;
++      urls[url_num].sock_protocol = aiv4->ai_protocol;
++      urls[url_num].sa_len = aiv4->ai_addrlen;
++      (void) memmove (&urls[url_num].sa, aiv4->ai_addr, aiv4->ai_addrlen);
++      freeaddrinfo (ai);
++      return;
++    }
++  if (aiv6 != (struct addrinfo *) 0)
++    {
++      if (sizeof (urls[url_num].sa) < aiv6->ai_addrlen)
++	{
++	  (void) fprintf (stderr, "%s - sockaddr too small (%lu < %lu)\n",
++			  hostname, (unsigned long) sizeof (urls[url_num].sa),
++			  (unsigned long) aiv6->ai_addrlen);
++	  exit (1);
++	}
++      urls[url_num].sock_family = aiv6->ai_family;
++      urls[url_num].sock_type = aiv6->ai_socktype;
++      urls[url_num].sock_protocol = aiv6->ai_protocol;
++      urls[url_num].sa_len = aiv6->ai_addrlen;
++      (void) memmove (&urls[url_num].sa, aiv6->ai_addr, aiv6->ai_addrlen);
++      freeaddrinfo (ai);
++      return;
++    }
++
++  (void) fprintf (stderr, "%s: no valid address found for host %s\n", argv0,
++		  hostname);
++  exit (1);
++
++#else /* USE_IPV6 */
++
++  he = gethostbyname (hostname);
++  if (he == (struct hostent *) 0)
++    {
++      (void) fprintf (stderr, "%s: unknown host - %s\n", argv0, hostname);
++      exit (1);
++    }
++  urls[url_num].sock_family = urls[url_num].sa.sin_family = he->h_addrtype;
++  urls[url_num].sock_type = SOCK_STREAM;
++  urls[url_num].sock_protocol = 0;
++  urls[url_num].sa_len = sizeof (urls[url_num].sa);
++  (void) memmove (&urls[url_num].sa.sin_addr, he->h_addr, he->h_length);
++  urls[url_num].sa.sin_port = htons (port);
++
++#endif /* USE_IPV6 */
++
++}
++
++
++static void
++read_sip_file (char *sip_file)
++{
++  FILE *fp;
++  char line[5000];
++
++  fp = fopen (sip_file, "r");
++  if (fp == (FILE *) 0)
++    {
++      perror (sip_file);
++      exit (1);
++    }
++
++  max_sips = 100;
++  sips = (sip *) malloc_check (max_sips * sizeof (sip));
++  num_sips = 0;
++  while (fgets (line, sizeof (line), fp) != (char *) 0)
++    {
++      /* Nuke trailing newline. */
++      if (line[strlen (line) - 1] == '\n')
++	line[strlen (line) - 1] = '\0';
++
++      /* Check for room in sips. */
++      if (num_sips >= max_sips)
++	{
++	  max_sips *= 2;
++	  sips =
++	    (sip *) realloc_check ((void *) sips, max_sips * sizeof (sip));
++	}
++
++      /* Add to table. */
++      sips[num_sips].str = strdup_check (line);
++      (void) memset ((void *) &sips[num_sips].sa, 0,
++		     sizeof (sips[num_sips].sa));
++      if (!inet_aton (sips[num_sips].str, &sips[num_sips].sa.sin_addr))
++	{
++	  (void) fprintf (stderr, "%s: cannot convert source IP address %s\n",
++			  argv0, sips[num_sips].str);
++	  exit (1);
++	}
++      ++num_sips;
++    }
++}
++
++
++static void
++start_connection (struct timeval *nowP)
++{
++  int cnum, url_num;
++
++  /* Find an empty connection slot. */
++  for (cnum = 0; cnum < max_connections; ++cnum)
++    if (connections[cnum].conn_state == CNST_FREE)
++      {
++	/* Choose a URL. */
++	url_num = ((unsigned long) random ()) % ((unsigned int) num_urls);
++	/* Start the socket. */
++	start_socket (url_num, cnum, nowP);
++	if (connections[cnum].conn_state != CNST_FREE)
++	  {
++	    ++num_connections;
++	    if (num_connections > max_parallel)
++	      max_parallel = num_connections;
++	  }
++	++fetches_started;
++	connections[cnum].start_seqn = fetches_started;
++	return;
++      }
++  /* No slots left. */
++  (void) fprintf (stderr, "%s: ran out of connection slots\n", argv0);
++  finish (nowP);
++}
++
++
++static void
++start_socket (int url_num, int cnum, struct timeval *nowP)
++{
++  ClientData client_data;
++  int flags;
++  int sip_num;
++
++  /* Start filling in the connection slot. */
++  connections[cnum].url_num = url_num;
++  connections[cnum].started_at = *nowP;
++  client_data.i = cnum;
++  connections[cnum].did_connect = 0;
++  connections[cnum].did_response = 0;
++  connections[cnum].idle_timer =
++    tmr_create (nowP, idle_connection, client_data, idle_secs * 1000L, 0);
++  connections[cnum].wakeup_timer = (Timer *) 0;
++  connections[cnum].content_length = -1;
++  connections[cnum].bytes = 0;
++  connections[cnum].checksum = 0;
++  connections[cnum].http_status = -1;
++
++  /* Make a socket. */
++  connections[cnum].conn_fd =
++    socket (urls[url_num].sock_family, urls[url_num].sock_type,
++	    urls[url_num].sock_protocol);
++  if (connections[cnum].conn_fd < 0)
++    {
++      perror (urls[url_num].url_str);
++      return;
++    }
++
++  /* Set the file descriptor to no-delay mode. */
++  flags = fcntl (connections[cnum].conn_fd, F_GETFL, 0);
++  if (flags == -1)
++    {
++      perror (urls[url_num].url_str);
++      (void) close (connections[cnum].conn_fd);
++      return;
++    }
++  if (fcntl (connections[cnum].conn_fd, F_SETFL, flags | O_NDELAY) < 0)
++    {
++      perror (urls[url_num].url_str);
++      (void) close (connections[cnum].conn_fd);
++      return;
++    }
++
++  if (num_sips > 0)
++    {
++      /* Try a random source IP address. */
++      sip_num = ((unsigned long) random ()) % ((unsigned int) num_sips);
++      if (bind (connections[cnum].conn_fd,
++		(struct sockaddr *) &sips[sip_num].sa,
++		sizeof (sips[sip_num].sa)) < 0)
++	{
++	  perror ("binding local address");
++	  (void) close (connections[cnum].conn_fd);
++	  return;
++	}
++    }
++
++  /* Connect to the host. */
++  connections[cnum].sa_len = urls[url_num].sa_len;
++  (void) memmove ((void *) &connections[cnum].sa, (void *) &urls[url_num].sa,
++		  urls[url_num].sa_len);
++  connections[cnum].connect_at = *nowP;
++  if (connect (connections[cnum].conn_fd,
++	       (struct sockaddr *) &connections[cnum].sa,
++	       connections[cnum].sa_len) < 0)
++    {
++      if (errno == EINPROGRESS)
++	{
++	  connections[cnum].conn_state = CNST_CONNECTING;
++	  return;
++	}
++      else
++	{
++	  perror (urls[url_num].url_str);
++	  (void) close (connections[cnum].conn_fd);
++	  return;
++	}
++    }
++
++  /* Connect succeeded instantly, so handle it now. */
++  (void) gettimeofday (nowP, (struct timezone *) 0);
++  handle_connect (cnum, nowP, 0);
++}
++
++
++static void
++handle_connect (int cnum, struct timeval *nowP, int double_check)
++{
++  int url_num;
++  char buf[5000];
++  int r;
++  unsigned bytes;
++
++  url_num = connections[cnum].url_num;
++  if (double_check)
++    {
++      /* Check to make sure the non-blocking connect succeeded. */
++      int err;
++      socklen_t errlen;
++
++      if (connect (connections[cnum].conn_fd,
++		   (struct sockaddr *) &connections[cnum].sa,
++		   connections[cnum].sa_len) < 0)
++	{
++	  switch (errno)
++	    {
++	    case EISCONN:
++	      /* Ok! */
++	      break;
++	    case EINVAL:
++	      errlen = sizeof (err);
++	      if (getsockopt
++		  (connections[cnum].conn_fd, SOL_SOCKET, SO_ERROR,
++		   (void *) &err, &errlen) < 0)
++		(void) fprintf (stderr, "%s: unknown connect error\n",
++				urls[url_num].url_str);
++	      else
++		(void) fprintf (stderr, "%s: %s\n", urls[url_num].url_str,
++				strerror (err));
++	      close_connection (cnum);
++	      return;
++	    default:
++	      perror (urls[url_num].url_str);
++	      close_connection (cnum);
++	      return;
++	    }
++	}
++    }
++#ifdef USE_SSL
++  if (urls[url_num].protocol == PROTO_HTTPS)
++    {
++      int flags;
++
++      /* Make SSL connection. */
++      if (ssl_ctx == (SSL_CTX *) 0)
++	{
++	  SSL_load_error_strings ();
++	  SSLeay_add_ssl_algorithms ();
++	  ssl_ctx = SSL_CTX_new (SSLv23_client_method ());
++	  if (cipher != (char *) 0)
++	    {
++	      if (!SSL_CTX_set_cipher_list (ssl_ctx, cipher))
++		{
++		  (void) fprintf (stderr, "%s: cannot set cipher list\n",
++				  argv0);
++		  ERR_print_errors_fp (stderr);
++		  close_connection (cnum);
++		  return;
++		}
++	    }
++	}
++      if (!RAND_status ())
++	{
++	  unsigned char bytes[1024];
++	  int i;
++	  for (i = 0; i < sizeof (bytes); ++i)
++	    bytes[i] = random () % 0xff;
++	  RAND_seed (bytes, sizeof (bytes));
++	}
++      flags = fcntl (connections[cnum].conn_fd, F_GETFL, 0);
++      if (flags != -1)
++	(void) fcntl (connections[cnum].conn_fd, F_SETFL,
++		      flags & ~(int) O_NDELAY);
++      connections[cnum].ssl = SSL_new (ssl_ctx);
++      SSL_set_fd (connections[cnum].ssl, connections[cnum].conn_fd);
++      r = SSL_connect (connections[cnum].ssl);
++      if (r <= 0)
++	{
++	  (void) fprintf (stderr, "%s: SSL connection failed - %d\n", argv0,
++			  r);
++	  ERR_print_errors_fp (stderr);
++	  close_connection (cnum);
++	  return;
++	}
++    }
++#endif
++  connections[cnum].did_connect = 1;
++
++  /* Format the request. */
++  if (do_proxy)
++    {
++#ifdef USE_SSL
++      bytes = snprintf (buf, sizeof (buf), "GET %s://%s:%d%s HTTP/1.0\r\n",
++			urls[url_num].protocol ==
++			PROTO_HTTPS ? "https" : "http",
++			urls[url_num].hostname, (int) urls[url_num].port,
++			urls[url_num].filename);
++#else
++      bytes = snprintf (buf, sizeof (buf), "GET http://%s:%d%s HTTP/1.0\r\n",
++			urls[url_num].hostname, (int) urls[url_num].port,
++			urls[url_num].filename);
++#endif
++    }
++  else
++    bytes = snprintf (buf, sizeof (buf), "GET %s HTTP/1.0\r\n",
++		      urls[url_num].filename);
++  bytes += snprintf (&buf[bytes], sizeof (buf) - bytes, "Host: %s\r\n",
++		     urls[url_num].hostname);
++  bytes +=
++    snprintf (&buf[bytes], sizeof (buf) - bytes, "User-Agent: %s\r\n",
++	      VERSION);
++  bytes += snprintf (&buf[bytes], sizeof (buf) - bytes, "\r\n");
++
++  if (bytes >= sizeof (buf) - 1)
++    {
++      (void) fprintf (stderr, "request skipped, too long: %s\n",
++		      urls[url_num].filename);
++      close_connection (cnum);
++      return;
++    }
++
++  /* Send the request. */
++  connections[cnum].request_at = *nowP;
++#ifdef USE_SSL
++  if (urls[url_num].protocol == PROTO_HTTPS)
++    r = SSL_write (connections[cnum].ssl, buf, bytes);
++  else
++    r = write (connections[cnum].conn_fd, buf, bytes);
++#else
++  r = write (connections[cnum].conn_fd, buf, bytes);
++#endif
++  if (r < 0)
++    {
++      perror (urls[url_num].url_str);
++      close_connection (cnum);
++      return;
++    }
++  connections[cnum].conn_state = CNST_HEADERS;
++  connections[cnum].header_state = HDST_LINE1_PROTOCOL;
++}
++
++
++static void
++handle_read (int cnum, struct timeval *nowP)
++{
++  char buf[30000];		/* must be larger than throttle / 2 */
++  int bytes_to_read, bytes_read, bytes_handled;
++  float elapsed;
++  ClientData client_data;
++  register long checksum;
++
++  tmr_reset (nowP, connections[cnum].idle_timer);
++
++  if (do_throttle)
++    bytes_to_read = throttle / 2.0;
++  else
++    bytes_to_read = sizeof (buf);
++  if (!connections[cnum].did_response)
++    {
++      connections[cnum].did_response = 1;
++      connections[cnum].response_at = *nowP;
++    }
++#ifdef USE_SSL
++  if (urls[connections[cnum].url_num].protocol == PROTO_HTTPS)
++    bytes_read = SSL_read (connections[cnum].ssl, buf, bytes_to_read);
++  else
++    bytes_read = read (connections[cnum].conn_fd, buf, bytes_to_read);
++#else
++  bytes_read = read (connections[cnum].conn_fd, buf, bytes_to_read);
++#endif
++  if (bytes_read <= 0)
++    {
++      close_connection (cnum);
++      return;
++    }
++
++  for (bytes_handled = 0; bytes_handled < bytes_read;)
++    {
++      switch (connections[cnum].conn_state)
++	{
++	case CNST_HEADERS:
++	  /* State machine to read until we reach the file part.  Looks for
++	   ** Content-Length header too.
++	   */
++	  for (;
++	       bytes_handled < bytes_read
++	       && connections[cnum].conn_state == CNST_HEADERS;
++	       ++bytes_handled)
++	    {
++	      switch (connections[cnum].header_state)
++		{
++
++		case HDST_LINE1_PROTOCOL:
++		  switch (buf[bytes_handled])
++		    {
++		    case ' ':
++		    case '\t':
++		      connections[cnum].header_state = HDST_LINE1_WHITESPACE;
++		      break;
++		    case '\n':
++		      connections[cnum].header_state = HDST_LF;
++		      break;
++		    case '\r':
++		      connections[cnum].header_state = HDST_CR;
++		      break;
++		    }
++		  break;
++
++		case HDST_LINE1_WHITESPACE:
++		  switch (buf[bytes_handled])
++		    {
++		    case ' ':
++		    case '\t':
++		      break;
++		    case '0':
++		    case '1':
++		    case '2':
++		    case '3':
++		    case '4':
++		    case '5':
++		    case '6':
++		    case '7':
++		    case '8':
++		    case '9':
++		      connections[cnum].http_status =
++			buf[bytes_handled] - '0';
++		      connections[cnum].header_state = HDST_LINE1_STATUS;
++		      break;
++		    case '\n':
++		      connections[cnum].header_state = HDST_LF;
++		      break;
++		    case '\r':
++		      connections[cnum].header_state = HDST_CR;
++		      break;
++		    default:
++		      connections[cnum].header_state = HDST_TEXT;
++		      break;
++		    }
++		  break;
++
++		case HDST_LINE1_STATUS:
++		  switch (buf[bytes_handled])
++		    {
++		    case '0':
++		    case '1':
++		    case '2':
++		    case '3':
++		    case '4':
++		    case '5':
++		    case '6':
++		    case '7':
++		    case '8':
++		    case '9':
++		      connections[cnum].http_status =
++			connections[cnum].http_status * 10 +
++			buf[bytes_handled] - '0';
++		      break;
++		    case '\n':
++		      connections[cnum].header_state = HDST_LF;
++		      break;
++		    case '\r':
++		      connections[cnum].header_state = HDST_CR;
++		      break;
++		    default:
++		      connections[cnum].header_state = HDST_TEXT;
++		      break;
++		    }
++		  break;
++
++		case HDST_BOL:
++		  switch (buf[bytes_handled])
++		    {
++		    case '\n':
++		      connections[cnum].header_state = HDST_LF;
++		      break;
++		    case '\r':
++		      connections[cnum].header_state = HDST_CR;
++		      break;
++		    case 'C':
++		    case 'c':
++		      connections[cnum].header_state = HDST_C;
++		      break;
++		    default:
++		      connections[cnum].header_state = HDST_TEXT;
++		      break;
++		    }
++		  break;
++
++		case HDST_TEXT:
++		  switch (buf[bytes_handled])
++		    {
++		    case '\n':
++		      connections[cnum].header_state = HDST_LF;
++		      break;
++		    case '\r':
++		      connections[cnum].header_state = HDST_CR;
++		      break;
++		    default:
++		      break;
++		    }
++		  break;
++
++		case HDST_LF:
++		  switch (buf[bytes_handled])
++		    {
++		    case '\n':
++		      connections[cnum].conn_state = CNST_READING;
++		      break;
++		    case '\r':
++		      connections[cnum].header_state = HDST_CR;
++		      break;
++		    case 'C':
++		    case 'c':
++		      connections[cnum].header_state = HDST_C;
++		      break;
++		    default:
++		      connections[cnum].header_state = HDST_TEXT;
++		      break;
++		    }
++		  break;
++
++		case HDST_CR:
++		  switch (buf[bytes_handled])
++		    {
++		    case '\n':
++		      connections[cnum].header_state = HDST_CRLF;
++		      break;
++		    case '\r':
++		      connections[cnum].conn_state = CNST_READING;
++		      break;
++		    case 'C':
++		    case 'c':
++		      connections[cnum].header_state = HDST_C;
++		      break;
++		    default:
++		      connections[cnum].header_state = HDST_TEXT;
++		      break;
++		    }
++		  break;
++
++		case HDST_CRLF:
++		  switch (buf[bytes_handled])
++		    {
++		    case '\n':
++		      connections[cnum].conn_state = CNST_READING;
++		      break;
++		    case '\r':
++		      connections[cnum].header_state = HDST_CRLFCR;
++		      break;
++		    case 'C':
++		    case 'c':
++		      connections[cnum].header_state = HDST_C;
++		      break;
++		    default:
++		      connections[cnum].header_state = HDST_TEXT;
++		      break;
++		    }
++		  break;
++
++		case HDST_CRLFCR:
++		  switch (buf[bytes_handled])
++		    {
++		    case '\n':
++		    case '\r':
++		      connections[cnum].conn_state = CNST_READING;
++		      break;
++		    case 'C':
++		    case 'c':
++		      connections[cnum].header_state = HDST_C;
++		      break;
++		    default:
++		      connections[cnum].header_state = HDST_TEXT;
++		      break;
++		    }
++		  break;
++
++		case HDST_C:
++		  switch (buf[bytes_handled])
++		    {
++		    case 'O':
++		    case 'o':
++		      connections[cnum].header_state = HDST_CO;
++		      break;
++		    case '\n':
++		      connections[cnum].header_state = HDST_LF;
++		      break;
++		    case '\r':
++		      connections[cnum].header_state = HDST_CR;
++		      break;
++		    default:
++		      connections[cnum].header_state = HDST_TEXT;
++		      break;
++		    }
++		  break;
++
++		case HDST_CO:
++		  switch (buf[bytes_handled])
++		    {
++		    case 'N':
++		    case 'n':
++		      connections[cnum].header_state = HDST_CON;
++		      break;
++		    case '\n':
++		      connections[cnum].header_state = HDST_LF;
++		      break;
++		    case '\r':
++		      connections[cnum].header_state = HDST_CR;
++		      break;
++		    default:
++		      connections[cnum].header_state = HDST_TEXT;
++		      break;
++		    }
++		  break;
++
++		case HDST_CON:
++		  switch (buf[bytes_handled])
++		    {
++		    case 'T':
++		    case 't':
++		      connections[cnum].header_state = HDST_CONT;
++		      break;
++		    case '\n':
++		      connections[cnum].header_state = HDST_LF;
++		      break;
++		    case '\r':
++		      connections[cnum].header_state = HDST_CR;
++		      break;
++		    default:
++		      connections[cnum].header_state = HDST_TEXT;
++		      break;
++		    }
++		  break;
++
++		case HDST_CONT:
++		  switch (buf[bytes_handled])
++		    {
++		    case 'E':
++		    case 'e':
++		      connections[cnum].header_state = HDST_CONTE;
++		      break;
++		    case '\n':
++		      connections[cnum].header_state = HDST_LF;
++		      break;
++		    case '\r':
++		      connections[cnum].header_state = HDST_CR;
++		      break;
++		    default:
++		      connections[cnum].header_state = HDST_TEXT;
++		      break;
++		    }
++		  break;
++
++		case HDST_CONTE:
++		  switch (buf[bytes_handled])
++		    {
++		    case 'N':
++		    case 'n':
++		      connections[cnum].header_state = HDST_CONTEN;
++		      break;
++		    case '\n':
++		      connections[cnum].header_state = HDST_LF;
++		      break;
++		    case '\r':
++		      connections[cnum].header_state = HDST_CR;
++		      break;
++		    default:
++		      connections[cnum].header_state = HDST_TEXT;
++		      break;
++		    }
++		  break;
++
++		case HDST_CONTEN:
++		  switch (buf[bytes_handled])
++		    {
++		    case 'T':
++		    case 't':
++		      connections[cnum].header_state = HDST_CONTENT;
++		      break;
++		    case '\n':
++		      connections[cnum].header_state = HDST_LF;
++		      break;
++		    case '\r':
++		      connections[cnum].header_state = HDST_CR;
++		      break;
++		    default:
++		      connections[cnum].header_state = HDST_TEXT;
++		      break;
++		    }
++		  break;
++
++		case HDST_CONTENT:
++		  switch (buf[bytes_handled])
++		    {
++		    case '-':
++		      connections[cnum].header_state = HDST_CONTENT_;
++		      break;
++		    case '\n':
++		      connections[cnum].header_state = HDST_LF;
++		      break;
++		    case '\r':
++		      connections[cnum].header_state = HDST_CR;
++		      break;
++		    default:
++		      connections[cnum].header_state = HDST_TEXT;
++		      break;
++		    }
++		  break;
++
++		case HDST_CONTENT_:
++		  switch (buf[bytes_handled])
++		    {
++		    case 'L':
++		    case 'l':
++		      connections[cnum].header_state = HDST_CONTENT_L;
++		      break;
++		    case '\n':
++		      connections[cnum].header_state = HDST_LF;
++		      break;
++		    case '\r':
++		      connections[cnum].header_state = HDST_CR;
++		      break;
++		    default:
++		      connections[cnum].header_state = HDST_TEXT;
++		      break;
++		    }
++		  break;
++
++		case HDST_CONTENT_L:
++		  switch (buf[bytes_handled])
++		    {
++		    case 'E':
++		    case 'e':
++		      connections[cnum].header_state = HDST_CONTENT_LE;
++		      break;
++		    case '\n':
++		      connections[cnum].header_state = HDST_LF;
++		      break;
++		    case '\r':
++		      connections[cnum].header_state = HDST_CR;
++		      break;
++		    default:
++		      connections[cnum].header_state = HDST_TEXT;
++		      break;
++		    }
++		  break;
++
++		case HDST_CONTENT_LE:
++		  switch (buf[bytes_handled])
++		    {
++		    case 'N':
++		    case 'n':
++		      connections[cnum].header_state = HDST_CONTENT_LEN;
++		      break;
++		    case '\n':
++		      connections[cnum].header_state = HDST_LF;
++		      break;
++		    case '\r':
++		      connections[cnum].header_state = HDST_CR;
++		      break;
++		    default:
++		      connections[cnum].header_state = HDST_TEXT;
++		      break;
++		    }
++		  break;
++
++		case HDST_CONTENT_LEN:
++		  switch (buf[bytes_handled])
++		    {
++		    case 'G':
++		    case 'g':
++		      connections[cnum].header_state = HDST_CONTENT_LENG;
++		      break;
++		    case '\n':
++		      connections[cnum].header_state = HDST_LF;
++		      break;
++		    case '\r':
++		      connections[cnum].header_state = HDST_CR;
++		      break;
++		    default:
++		      connections[cnum].header_state = HDST_TEXT;
++		      break;
++		    }
++		  break;
++
++		case HDST_CONTENT_LENG:
++		  switch (buf[bytes_handled])
++		    {
++		    case 'T':
++		    case 't':
++		      connections[cnum].header_state = HDST_CONTENT_LENGT;
++		      break;
++		    case '\n':
++		      connections[cnum].header_state = HDST_LF;
++		      break;
++		    case '\r':
++		      connections[cnum].header_state = HDST_CR;
++		      break;
++		    default:
++		      connections[cnum].header_state = HDST_TEXT;
++		      break;
++		    }
++		  break;
++
++		case HDST_CONTENT_LENGT:
++		  switch (buf[bytes_handled])
++		    {
++		    case 'H':
++		    case 'h':
++		      connections[cnum].header_state = HDST_CONTENT_LENGTH;
++		      break;
++		    case '\n':
++		      connections[cnum].header_state = HDST_LF;
++		      break;
++		    case '\r':
++		      connections[cnum].header_state = HDST_CR;
++		      break;
++		    default:
++		      connections[cnum].header_state = HDST_TEXT;
++		      break;
++		    }
++		  break;
++
++		case HDST_CONTENT_LENGTH:
++		  switch (buf[bytes_handled])
++		    {
++		    case ':':
++		      connections[cnum].header_state =
++			HDST_CONTENT_LENGTH_COLON;
++		      break;
++		    case '\n':
++		      connections[cnum].header_state = HDST_LF;
++		      break;
++		    case '\r':
++		      connections[cnum].header_state = HDST_CR;
++		      break;
++		    default:
++		      connections[cnum].header_state = HDST_TEXT;
++		      break;
++		    }
++		  break;
++
++		case HDST_CONTENT_LENGTH_COLON:
++		  switch (buf[bytes_handled])
++		    {
++		    case ' ':
++		    case '\t':
++		      connections[cnum].header_state =
++			HDST_CONTENT_LENGTH_COLON_WHITESPACE;
++		      break;
++		    case '\n':
++		      connections[cnum].header_state = HDST_LF;
++		      break;
++		    case '\r':
++		      connections[cnum].header_state = HDST_CR;
++		      break;
++		    default:
++		      connections[cnum].header_state = HDST_TEXT;
++		      break;
++		    }
++		  break;
++
++		case HDST_CONTENT_LENGTH_COLON_WHITESPACE:
++		  switch (buf[bytes_handled])
++		    {
++		    case ' ':
++		    case '\t':
++		      break;
++		    case '0':
++		    case '1':
++		    case '2':
++		    case '3':
++		    case '4':
++		    case '5':
++		    case '6':
++		    case '7':
++		    case '8':
++		    case '9':
++		      connections[cnum].content_length =
++			buf[bytes_handled] - '0';
++		      connections[cnum].header_state =
++			HDST_CONTENT_LENGTH_COLON_WHITESPACE_NUM;
++		      break;
++		    case '\n':
++		      connections[cnum].header_state = HDST_LF;
++		      break;
++		    case '\r':
++		      connections[cnum].header_state = HDST_CR;
++		      break;
++		    default:
++		      connections[cnum].header_state = HDST_TEXT;
++		      break;
++		    }
++		  break;
++
++		case HDST_CONTENT_LENGTH_COLON_WHITESPACE_NUM:
++		  switch (buf[bytes_handled])
++		    {
++		    case '0':
++		    case '1':
++		    case '2':
++		    case '3':
++		    case '4':
++		    case '5':
++		    case '6':
++		    case '7':
++		    case '8':
++		    case '9':
++		      connections[cnum].content_length =
++			connections[cnum].content_length * 10 +
++			buf[bytes_handled] - '0';
++		      break;
++		    case '\n':
++		      connections[cnum].header_state = HDST_LF;
++		      break;
++		    case '\r':
++		      connections[cnum].header_state = HDST_CR;
++		      break;
++		    default:
++		      connections[cnum].header_state = HDST_TEXT;
++		      break;
++		    }
++		  break;
++
++		}
++	    }
++	  break;
++
++	case CNST_READING:
++	  connections[cnum].bytes += bytes_read - bytes_handled;
++	  if (do_throttle)
++	    {
++	      /* Check if we're reading too fast. */
++	      elapsed =
++		delta_timeval (&connections[cnum].started_at,
++			       nowP) / 1000000.0;
++	      if (elapsed > 0.01
++		  && connections[cnum].bytes / elapsed > throttle)
++		{
++		  connections[cnum].conn_state = CNST_PAUSING;
++		  client_data.i = cnum;
++		  connections[cnum].wakeup_timer =
++		    tmr_create (nowP, wakeup_connection, client_data, 1000L,
++				0);
++		}
++	    }
++	  if (do_checksum)
++	    {
++	      checksum = connections[cnum].checksum;
++	      for (; bytes_handled < bytes_read; ++bytes_handled)
++		{
++		  if (checksum & 1)
++		    checksum = (checksum >> 1) + 0x8000;
++		  else
++		    checksum >>= 1;
++		  checksum += buf[bytes_handled];
++		  checksum &= 0xffff;
++		}
++	      connections[cnum].checksum = checksum;
++	    }
++	  else
++	    bytes_handled = bytes_read;
++
++	  if (connections[cnum].content_length != -1 &&
++	      connections[cnum].bytes >= connections[cnum].content_length)
++	    {
++	      close_connection (cnum);
++	      return;
++	    }
++
++	  break;
++	}
++    }
++}
++
++
++static void
++idle_connection (ClientData client_data, struct timeval *nowP)
++{
++  int cnum;
++
++  cnum = client_data.i;
++  connections[cnum].idle_timer = (Timer *) 0;
++  (void) fprintf (stderr, "%s: timed out\n",
++		  urls[connections[cnum].url_num].url_str);
++  close_connection (cnum);
++  ++total_timeouts;
++}
++
++
++static void
++wakeup_connection (ClientData client_data, struct timeval *nowP)
++{
++  int cnum;
++
++  cnum = client_data.i;
++  connections[cnum].wakeup_timer = (Timer *) 0;
++  connections[cnum].conn_state = CNST_READING;
++}
++
++
++static void
++close_connection (int cnum)
++{
++  int url_num;
++  long long connect_usecs = -1;
++  long long response_usecs = -1;
++  int sock_port = -1;
++
++  if (1)
++    {
++      struct sockaddr_in sa;
++      socklen_t sa_len = sizeof (sa);
++      if (getsockname
++	  (connections[cnum].conn_fd, (struct sockaddr *) &sa, &sa_len) == 0)
++	sock_port = ntohs (sa.sin_port);
++      else
++	printf ("getsockname: %s\n", strerror (errno));
++    }
++
++#ifdef USE_SSL
++  if (urls[connections[cnum].url_num].protocol == PROTO_HTTPS)
++    SSL_free (connections[cnum].ssl);
++#endif
++  (void) close (connections[cnum].conn_fd);
++  connections[cnum].conn_state = CNST_FREE;
++  if (connections[cnum].idle_timer != (Timer *) 0)
++    tmr_cancel (connections[cnum].idle_timer);
++  if (connections[cnum].wakeup_timer != (Timer *) 0)
++    tmr_cancel (connections[cnum].wakeup_timer);
++  --num_connections;
++  ++fetches_completed;
++  total_bytes += connections[cnum].bytes;
++  if (connections[cnum].did_connect)
++    {
++      connect_usecs =
++	delta_timeval (&connections[cnum].connect_at,
++		       &connections[cnum].request_at);
++      total_connect_usecs += connect_usecs;
++      max_connect_usecs = max (max_connect_usecs, connect_usecs);
++      min_connect_usecs = min (min_connect_usecs, connect_usecs);
++      ++connects_completed;
++    }
++  if (connections[cnum].did_response)
++    {
++      response_usecs =
++	delta_timeval (&connections[cnum].request_at,
++		       &connections[cnum].response_at);
++      total_response_usecs += response_usecs;
++      max_response_usecs = max (max_response_usecs, response_usecs);
++      min_response_usecs = min (min_response_usecs, response_usecs);
++      ++responses_completed;
++    }
++  if (connections[cnum].http_status >= 0
++      && connections[cnum].http_status <= 999)
++    ++http_status_counts[connections[cnum].http_status];
++
++  /* log slow connections */
++  if (1 && connect_usecs > log_connect_usecs_thresh)
++    {
++      printf ("%d\t%d\t%d\t%lld\t%lld\t%d\n",
++	      connections[cnum].start_seqn,
++	      0,
++	      sock_port,
++	      connect_usecs, response_usecs, connections[cnum].http_status);
++      /* automatically use this as the new threshold */
++      log_connect_usecs_thresh = connect_usecs;
++    }
++
++  url_num = connections[cnum].url_num;
++  if (do_checksum)
++    {
++      if (!urls[url_num].got_checksum)
++	{
++	  urls[url_num].checksum = connections[cnum].checksum;
++	  urls[url_num].got_checksum = 1;
++	}
++      else
++	{
++	  if (connections[cnum].checksum != urls[url_num].checksum)
++	    {
++	      (void) fprintf (stderr, "%s: checksum wrong\n",
++			      urls[url_num].url_str);
++	      ++total_badchecksums;
++	    }
++	}
++    }
++  else
++    {
++      if (!urls[url_num].got_bytes)
++	{
++	  urls[url_num].bytes = connections[cnum].bytes;
++	  urls[url_num].got_bytes = 1;
++	}
++      else
++	{
++	  if (connections[cnum].bytes != urls[url_num].bytes)
++	    {
++	      (void) fprintf (stderr, "%s: byte count wrong\n",
++			      urls[url_num].url_str);
++	      ++total_badbytes;
++	    }
++	}
++    }
++}
++
++
++static void
++progress_report (ClientData client_data, struct timeval *nowP)
++{
++  float elapsed;
++
++  elapsed = delta_timeval (&start_at, nowP) / 1000000.0;
++  (void) fprintf (stderr,
++		  "--- %g secs, %d fetches started, %d completed, %d current\n",
++		  elapsed, fetches_started, fetches_completed,
++		  num_connections);
++}
++
++
++static void
++start_timer (ClientData client_data, struct timeval *nowP)
++{
++  start_connection (nowP);
++  if (do_jitter)
++    (void) tmr_create (nowP, start_timer, JunkClientData,
++		       (long) (random () % range_interval) + low_interval, 0);
++}
++
++
++static void
++end_timer (ClientData client_data, struct timeval *nowP)
++{
++  finish (nowP);
++}
++
++
++static void
++finish (struct timeval *nowP)
++{
++  float elapsed;
++  int i;
++
++  /* Report statistics. */
++  elapsed = delta_timeval (&start_at, nowP) / 1000000.0;
++  (void) printf ("%d fetches, %d max parallel, %g bytes, in %g seconds\n",
++		 fetches_completed, max_parallel, (float) total_bytes,
++		 elapsed);
++  if (fetches_completed > 0)
++    (void) printf ("%g mean bytes/connection\n",
++		   (float) total_bytes / (float) fetches_completed);
++  if (elapsed > 0.01)
++    {
++      (void) printf ("%g fetches/sec, %g bytes/sec\n",
++		     (float) fetches_completed / elapsed,
++		     (float) total_bytes / elapsed);
++    }
++  if (connects_completed > 0)
++    (void) printf ("msecs/connect: %g mean, %g max, %g min\n",
++		   (float) total_connect_usecs / (float) connects_completed /
++		   1000.0, (float) max_connect_usecs / 1000.0,
++		   (float) min_connect_usecs / 1000.0);
++  if (responses_completed > 0)
++    (void) printf ("msecs/first-response: %g mean, %g max, %g min\n",
++		   (float) total_response_usecs /
++		   (float) responses_completed / 1000.0,
++		   (float) max_response_usecs / 1000.0,
++		   (float) min_response_usecs / 1000.0);
++  if (total_timeouts != 0)
++    (void) printf ("%d timeouts\n", total_timeouts);
++  if (do_checksum)
++    {
++      if (total_badchecksums != 0)
++	(void) printf ("%d bad checksums\n", total_badchecksums);
++    }
++  else
++    {
++      if (total_badbytes != 0)
++	(void) printf ("%d bad byte counts\n", total_badbytes);
++    }
++
++  (void) printf ("HTTP response codes:\n");
++  for (i = 0; i < 1000; ++i)
++    if (http_status_counts[i] > 0)
++      (void) printf ("  code %03d -- %d\n", i, http_status_counts[i]);
++
++  tmr_destroy ();
++#ifdef USE_SSL
++  if (ssl_ctx != (SSL_CTX *) 0)
++    SSL_CTX_free (ssl_ctx);
++#endif
++  exit (0);
 +}
 +
 +
 +static long long
-+delta_timeval( struct timeval* start, struct timeval* finish )
++delta_timeval (struct timeval *start, struct timeval *finish)
 +{
-+    long long delta_secs = finish->tv_sec - start->tv_sec;
-+    long long delta_usecs = finish->tv_usec - start->tv_usec;
-+    return delta_secs * (long long) 1000000L + delta_usecs;
++  long long delta_secs = finish->tv_sec - start->tv_sec;
++  long long delta_usecs = finish->tv_usec - start->tv_usec;
++  return delta_secs * (long long) 1000000L + delta_usecs;
 +}
 +
 +
-+static void*
-+malloc_check( size_t size )
++static void *
++malloc_check (size_t size)
 +{
-+    void* ptr = malloc( size );
-+    check( ptr );
-+    return ptr;
++  void *ptr = malloc (size);
++  check (ptr);
++  return ptr;
 +}
 +
 +
-+static void*
-+realloc_check( void* ptr, size_t size )
++static void *
++realloc_check (void *ptr, size_t size)
 +{
-+    ptr = realloc( ptr, size );
-+    check( ptr );
-+    return ptr;
++  ptr = realloc (ptr, size);
++  check (ptr);
++  return ptr;
 +}
 +
 +
-+static char*
-+strdup_check( char* str )
++static char *
++strdup_check (char *str)
 +{
-+    str = strdup( str );
-+    check( (void*) str );
-+    return str;
++  str = strdup (str);
++  check ((void *) str);
++  return str;
 +}
 +
 +
 +static void
-+check( void* ptr )
++check (void *ptr)
 +{
-+    if ( ptr == (void*) 0 )
-+        {
-+            (void) fprintf( stderr, "%s: out of memory\n", argv0 );
-+            exit( 1 );
-+        }
++  if (ptr == (void *) 0)
++    {
++      (void) fprintf (stderr, "%s: out of memory\n", argv0);
++      exit (1);
++    }
 +}
 --- /dev/null
 +++ httpload-0.1/httpload.1
@@ -2276,10 +2347,971 @@ Last-Update: <YYYY-MM-DD>
 +.\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 +.\" SUCH DAMAGE.
 --- /dev/null
-+++ httpload-0.1/sip.txt
-@@ -0,0 +1 @@
-+127.0.0.1:6760
++++ httpload-0.1/README.md
+@@ -0,0 +1,144 @@
++# httpload: event loop based multiprocessing HTTP load test tool
++
++## Introduction
++
++**httpload** is a tool for testing web sites. It issues a series of
++HTTP requests in parallel. The URLs to be hit are read from a file and
++tried randomly. It runs a single process. It's particularly adequate
++for testing asynchronous web servers in multi-core/multi-cpu machines
++like [Nginx](http://nginx.org) or [Lighttpd](http://lighttpd.org/).
++
++The original [tool](http://www.acme.com/software/http_load/) was
++created by [Jef Poskanzer](http://www.acme.com/jef/).
++
++This version is IPv6 and SSL/TLS enabled.
++
++## Vanilla installation
++
++ 1. Clone the repo from git://github.com/perusio/httpload.git
++    or grab the tarball from [downloads](https://github.com/perusio/httpload/archives/master).
++ 
++ 2. Issue `make` & `make install`. By default the binary will be
++    installed under `/usr/bin` and the man page under `/usr/share/man/man1`.
++    
++ 3. Done.
++
++## Debian package installation 
++
++ 1. Either download the binary package from
++    [debian.perusio.net](http://debian.perusio.net/unstable) or download the
++    source package and build from source while following the
++    [instructions](http://debian.perusio.net).
++   
++ 2. Done.
++ 
++## Usage
++
++`httpload` requires you to specify an option for **starting** the
++connection and one for **terminating** the connection.
++
++ * `-parallel` or `-rate` for starting.
++ 
++ * `-seconds` or `-fetches` for terminating.
++ 
++ Additionally a `-jitter` option specifies that the rate given in
++ `-rate` varies up to 10%.
++ 
++The URLs in the URL file are visited in random order. You can specify
++the seed of the random number generator with:
++ 
++ * `-seed integer`     
++
++The `-seed` option was added by
++[Tim Bunce](https://github.com/timbunce/http_load/commit/eaac0cab647dfa68b863565082f70c8ddcc5ee85).
++
++`httpload` can query HTTPS based servers. If you don't specify the
++cipher using:
++
++ * `-ciphers str` where `str` is a
++   [openssl](http://www.openssl.org/docs/apps/ciphers.html) cipher
++   specification string.
++   
++   An example is `ECDHE-RSA-AES256-SHA`. 
++      
++A complete example of querying the URLs specified in file
++`test_url_s.txt` using the given cipher.
++ 
++    httpload -cipher ECDHE-RSA-AES256-SHA -parallel 10 -seconds 10 test_url_s.txt 
++
++    279 fetches, 10 max parallel, 11997 bytes, in 10.0124 seconds
++    43 mean bytes/connection
++    27.8654 fetches/sec, 1198.21 bytes/sec
++    msecs/connect: 33.6593 mean, 347.213 max, 0.037 min
++    msecs/first-response: 247.849 mean, 378.282 max, 31.069 min
++    HTTP response codes:
++    code 200 -- 279
++
++The tool accepts three shortcut names for a *fast*, *high* and
++*paranoid* cipher. Notwithstanding the *fast* cipher is not that
++fast, since it only accepts SSLv3+ ciphers. There are speed diferences
++between them. The shortcuts are:
++
++ * `fastsec`  - CAMELLIA128-SHA
++ * `highsec`  - AES256-SHA
++ * `paranoid` - DHE-RSA-AES256-SHA
++ 
++The complete usage documentation is on the
++[manpage](http://github.perusio.org/httpload).
++
++## Additional scripts for load testing
++
++There are two scripts for load testing on the `contrib` subdirectory:
++
++ 1. `httpload-make-test-files` - creates a given number of 1kB/1MB
++    sized files for testing purposes. The files are named
++    `01_kB_testfile.txt`,
++    `02_kB_testfile.txt`..., `01_MB_testfile.txt`,
++    `02_MB_testfile.txt`..., respectively.
++    
++    The original script was [created](https://github.com/perusio/httpload/commit/c28f6a58f8040775dfa68984ad8efe476fa19923#diff-5) by
++    [chaoslawful](https://github.com/chaoslawful).
++
++    Examples:
++    
++    Create ten 1 kB files.
++    
++        httpload-make-test-files -k 10 
++
++    Create seven 1 MB files.
++    
++        httpload-make-test-files -m 7 
++
++ 2. `httpload-single` - starts a load test using `httpload` using a
++    single URL. This is just a wrapper around httpload. It functions
++    as a stopgap solution until support for such is included in the C
++    program.
++
++    Example:
++    
++        httpload-single -parallel 10 -seconds 30 http://example.com/img.jpg
++
++
++## Comparison with other testing tools
++
++ * [`ab`](http://httpd.apache.org/docs/2.2/programs/ab.html):
++   `httpload` differs significantly from `ab`, since uses the
++   [Apache Portable Runtime](http://apr.apache.org/docs/apr/1.4/) which
++   uses threads instead of a single process (loop) like `httpload`. `ab`
++   is **CPU bound**.
++
++ * [`siege`](http://www.joedog.org/siege-home): also relies on
++   **threads** contrary to `httpload` that uses a single process
++   (loop).
++   
++## TODO   
++
++ 1. Implement CSV output for statistical and graphical treatment of
++    the test results.
++ 
++ 2. Implement a single URL target given on the command line. For now
++    the `httpload-single` shell script is a stopgap solution for such.
++ 
++ 3. Implement
++    [`epoll(7)`](https://secure.wikimedia.org/wikipedia/en/wiki/Epoll)
++    I/O event notification in Linux as an alternative to [`select(2)`](https://secure.wikimedia.org/wikipedia/en/wiki/Select_\(Unix\)).
 --- /dev/null
-+++ httpload-0.1/test_url_s.txt
-@@ -0,0 +1 @@
-+https://machaut:489
++++ httpload-0.1/contrib/httpload-make-test-files
+@@ -0,0 +1,82 @@
++#!/bin/bash
++## httpload-make-test-files --- A script for creating a given number
++## of 1 MB size files for testing a server with httpload.
++
++## Copyright (C) 2009 Xiaozhe Wang <chaoslawful@gmail.com>
++## Copyright (C) 2011 Ant처nio P. P. Almeida <appa@perusio.net>
++
++## Author: Ant처nio P. P. Almeida <appa@perusio.net>
++
++## Permission is hereby granted, free of charge, to any person obtaining a
++## copy of this software and associated documentation files (the "Software"),
++## to deal in the Software without restriction, including without limitation
++## the rights to use, copy, modify, merge, publish, distribute, sublicense,
++## and/or sell copies of the Software, and to permit persons to whom the
++## Software is furnished to do so, subject to the following conditions:
++
++## The above copyright notice and this permission notice shall be included in
++## all copies or substantial portions of the Software.
++
++## Except as contained in this notice, the name(s) of the above copyright
++## holders shall not be used in advertising or otherwise to promote the sale,
++## use or other dealings in this Software without prior written authorization.
++
++## THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++## IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++## FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
++## THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++## LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++## FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
++## DEALINGS IN THE SOFTWARE.
++
++SCRIPTNAME=${0##*/}
++
++## Print the usage.
++function print_usage () {
++    echo "usage:  $SCRIPTNAME -k nbr_of_kB_files -m nbr_of_MB_files"
++}
++
++## Check the number of arguments.
++if [ $# -ne 2 ]; then
++    print_usage
++    exit 1
++fi
++
++## Create the temporary file.
++TMP_FILE=$(mktemp)
++
++## Create the kB/MB sized files.
++## $1 - number of concatenations to be done of the basic string.
++## $2 - number of files to be created.
++## $3 - string discriminating kB or MB files.
++function generate_files () {
++    if [ $2 -gt 0 ]; then
++        for i in $(seq -s " " $1); do
++            echo '123456789012345678901234567890123456789012345678901234567890123' >> $TMP_FILE
++        done
++        ## Loop where the files are created.
++        for j in $(seq -s " " $2); do
++            cat $TMP_FILE > $(printf "%02d_%s_testfile.txt" $j $3)
++        done
++    fi
++}
++
++## Parsing the arguments.
++while getopts k:m: OPT; do
++    case $OPT in
++        k|+k) # Generate kB files.
++            generate_files 16 $OPTARG 'kB'
++            ;;
++        m|+m) # Generate MB files.
++            generate_files 16384 $OPTARG 'MB'
++            ;;
++        *)
++            print_usage
++            exit 2
++    esac
++done
++shift $((OPTIND - 1))
++OPTIND=1
++
++## Cleanup.
++trap "rm -f $TMP_FILE" EXIT
+--- /dev/null
++++ httpload-0.1/contrib/httpload-single
+@@ -0,0 +1,78 @@
++#!/bin/bash
++## httpload-single --- A shell script wrapper around httpload that
++## accepts a URL from the command line.
++
++## Copyright (C) 2011 Ant처nio P. P. Almeida <appa@perusio.net>
++
++## Author: Ant처nio P. P. Almeida <appa@perusio.net>
++
++## Permission is hereby granted, free of charge, to any person obtaining a
++## copy of this software and associated documentation files (the "Software"),
++## to deal in the Software without restriction, including without limitation
++## the rights to use, copy, modify, merge, publish, distribute, sublicense,
++## and/or sell copies of the Software, and to permit persons to whom the
++## Software is furnished to do so, subject to the following conditions:
++
++## The above copyright notice and this permission notice shall be included in
++## all copies or substantial portions of the Software.
++
++## Except as contained in this notice, the name(s) of the above copyright
++## holders shall not be used in advertising or otherwise to promote the sale,
++## use or other dealings in this Software without prior written authorization.
++
++## THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++## IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++## FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
++## THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++## LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++## FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
++## DEALINGS IN THE SOFTWARE.
++
++SCRIPTNAME=${0##*/}
++
++## Usage information.
++function print_usage() {
++    echo "usage: $SCRIPTNAME httpload_args URL"
++}
++
++if [ $# -eq 0 ]; then
++    print_usage
++    exit 1
++fi
++
++
++## The httpload program.
++HTTPLOAD=$(which httpload)
++[ -x $HTTPLOAD ] || exit 0
++
++## Loop for getting the arguments.
++HTTPLOAD_ARGS=""
++j=1
++for i in $*; do
++    if [ $j -lt $# ]; then
++        HTTPLOAD_ARGS="$HTTPLOAD_ARGS $i"
++        j=$((j+1))
++    fi
++done
++echo "$HTTPLOAD_ARGS $i" && exit 0
++## Creating the temporary file with the URL.
++TEMP_FILE=$(mktemp --tmpdir=.)
++
++## Verify that the last argument is indeed a URL.
++SCHEME=$(echo $i | cut -f 1 -d ':')
++
++case $SCHEME in
++    http|https)
++        echo $i > $TEMP_FILE
++        ;;
++    *)
++        print_usage
++        exit 2
++        ;;
++esac
++
++## Invoking httpload.
++$HTTPLOAD $HTTPLOAD_ARGS $TEMP_FILE
++
++## Cleanup.
++trap "rm -f $TEMP_FILE" exit
+--- httpload-0.1.orig/port.h
++++ httpload-0.1/port.h
+@@ -96,7 +96,7 @@
+ # define HAVE_SCANDIR
+ # define HAVE_TM_GMTOFF
+ # define NO_SNPRINTF
+-/* # define HAVE_INT64T */	/* Digital Unix 4.0d doesn't have int64_t */
++/* # define HAVE_INT64T */      /* Digital Unix 4.0d doesn't have int64_t */
+ #endif /* OS_DigitalUnix */
+ 
+ #ifdef OS_SysV
+--- /dev/null
++++ httpload-0.1/ssl_ciphers.h
+@@ -0,0 +1,16 @@
++/**
++ * @file   ssl_ciphers.h
++ * @author Ant처nio P. P. Almeida <appa@perusio.net>
++ * @date   Mon Aug  8 00:22:09 2011
++ *
++ * @brief  Header file for defining the cipher shortcuts of httpload.
++ *
++ */
++#ifndef _SSL_CIPHERS_H_
++#define _SSL_CIPHERS_H_
++
++#define FASTSEC_SSL_CIPHER "CAMELLIA128-SHA"
++#define HIGHSEC_SSL_CIPHER "AES256-SHA"
++#define PARANOID_SSL_CIPHER "DHE-RSA-AES256-SHA"
++
++#endif /* _SSL_CIPHERS_H_ */
+--- httpload-0.1.orig/timers.c
++++ httpload-0.1/timers.c
+@@ -34,295 +34,293 @@
+ 
+ 
+ #define HASH_SIZE 67
+-static Timer* timers[HASH_SIZE];
+-static Timer* free_timers = (Timer*) 0;
++static Timer *timers[HASH_SIZE];
++static Timer *free_timers = (Timer *) 0;
+ 
+ ClientData JunkClientData;
+ 
+ 
+ 
+ static unsigned int
+-hash( Timer* t )
+-    {
+-    /* We can hash on the trigger time, even though it can change over
+-    ** the life of a timer via either the periodic bit or the tmr_reset()
+-    ** call.  This is because both of those guys call l_resort(), which
+-    ** recomputes the hash and moves the timer to the appropriate list.
+-    */
+-    return (
+-	(unsigned int) t->time.tv_sec ^
+-	(unsigned int) t->time.tv_usec ) % HASH_SIZE;
+-    }
++hash (Timer * t)
++{
++  /* We can hash on the trigger time, even though it can change over
++   ** the life of a timer via either the periodic bit or the tmr_reset()
++   ** call.  This is because both of those guys call l_resort(), which
++   ** recomputes the hash and moves the timer to the appropriate list.
++   */
++  return ((unsigned int) t->time.tv_sec ^
++	  (unsigned int) t->time.tv_usec) % HASH_SIZE;
++}
+ 
+ 
+ static void
+-l_add( Timer* t )
+-    {
+-    int h = t->hash;
+-    register Timer* t2;
+-    register Timer* t2prev;
+-
+-    t2 = timers[h];
+-    if ( t2 == (Timer*) 0 )
++l_add (Timer * t)
++{
++  int h = t->hash;
++  register Timer *t2;
++  register Timer *t2prev;
++
++  t2 = timers[h];
++  if (t2 == (Timer *) 0)
++    {
++      /* The list is empty. */
++      timers[h] = t;
++      t->prev = t->next = (Timer *) 0;
++    }
++  else
++    {
++      if (t->time.tv_sec < t2->time.tv_sec ||
++	  (t->time.tv_sec == t2->time.tv_sec &&
++	   t->time.tv_usec <= t2->time.tv_usec))
+ 	{
+-	/* The list is empty. */
+-	timers[h] = t;
+-	t->prev = t->next = (Timer*) 0;
++	  /* The new timer goes at the head of the list. */
++	  timers[h] = t;
++	  t->prev = (Timer *) 0;
++	  t->next = t2;
++	  t2->prev = t;
+ 	}
+-    else
++      else
+ 	{
+-	if ( t->time.tv_sec < t2->time.tv_sec ||
+-	     ( t->time.tv_sec == t2->time.tv_sec &&
+-	       t->time.tv_usec <= t2->time.tv_usec ) )
+-	    {
+-	    /* The new timer goes at the head of the list. */
+-	    timers[h] = t;
+-	    t->prev = (Timer*) 0;
+-	    t->next = t2;
+-	    t2->prev = t;
+-	    }
+-	else
++	  /* Walk the list to find the insertion point. */
++	  for (t2prev = t2, t2 = t2->next; t2 != (Timer *) 0;
++	       t2prev = t2, t2 = t2->next)
+ 	    {
+-	    /* Walk the list to find the insertion point. */
+-	    for ( t2prev = t2, t2 = t2->next; t2 != (Timer*) 0;
+-		  t2prev = t2, t2 = t2->next )
++	      if (t->time.tv_sec < t2->time.tv_sec ||
++		  (t->time.tv_sec == t2->time.tv_sec &&
++		   t->time.tv_usec <= t2->time.tv_usec))
+ 		{
+-		if ( t->time.tv_sec < t2->time.tv_sec ||
+-		     ( t->time.tv_sec == t2->time.tv_sec &&
+-		       t->time.tv_usec <= t2->time.tv_usec ) )
+-		    {
+-		    /* Found it. */
+-		    t2prev->next = t;
+-		    t->prev = t2prev;
+-		    t->next = t2;
+-		    t2->prev = t;
+-		    return;
+-		    }
++		  /* Found it. */
++		  t2prev->next = t;
++		  t->prev = t2prev;
++		  t->next = t2;
++		  t2->prev = t;
++		  return;
+ 		}
+-	    /* Oops, got to the end of the list.  Add to tail. */
+-	    t2prev->next = t;
+-	    t->prev = t2prev;
+-	    t->next = (Timer*) 0;
+ 	    }
++	  /* Oops, got to the end of the list.  Add to tail. */
++	  t2prev->next = t;
++	  t->prev = t2prev;
++	  t->next = (Timer *) 0;
+ 	}
+     }
++}
+ 
+ 
+ static void
+-l_remove( Timer* t )
+-    {
+-    int h = t->hash;
+-
+-    if ( t->prev == (Timer*) 0 )
+-	timers[h] = t->next;
+-    else
+-	t->prev->next = t->next;
+-    if ( t->next != (Timer*) 0 )
+-	t->next->prev = t->prev;
+-    }
++l_remove (Timer * t)
++{
++  int h = t->hash;
++
++  if (t->prev == (Timer *) 0)
++    timers[h] = t->next;
++  else
++    t->prev->next = t->next;
++  if (t->next != (Timer *) 0)
++    t->next->prev = t->prev;
++}
+ 
+ 
+ static void
+-l_resort( Timer* t )
+-    {
+-    /* Remove the timer from its old list. */
+-    l_remove( t );
+-    /* Recompute the hash. */
+-    t->hash = hash( t );
+-    /* And add it back in to its new list, sorted correctly. */
+-    l_add( t );
+-    }
++l_resort (Timer * t)
++{
++  /* Remove the timer from its old list. */
++  l_remove (t);
++  /* Recompute the hash. */
++  t->hash = hash (t);
++  /* And add it back in to its new list, sorted correctly. */
++  l_add (t);
++}
+ 
+ 
+ void
+-tmr_init( void )
+-    {
+-    int h;
+-
+-    for ( h = 0; h < HASH_SIZE; ++h )
+-	timers[h] = (Timer*) 0;
+-    }
++tmr_init (void)
++{
++  int h;
+ 
++  for (h = 0; h < HASH_SIZE; ++h)
++    timers[h] = (Timer *) 0;
++}
+ 
+-Timer*
+-tmr_create(
+-    struct timeval* nowP, TimerProc* timer_proc, ClientData client_data,
+-    long msecs, int periodic )
+-    {
+-    Timer* t;
+ 
+-    if ( free_timers != (Timer*) 0 )
+-	{
+-	t = free_timers;
+-	free_timers = t->next;
+-	}
+-    else
+-	{
+-	t = (Timer*) malloc( sizeof(Timer) );
+-	if ( t == (Timer*) 0 )
+-	    return (Timer*) 0;
+-	}
++Timer *
++tmr_create (struct timeval *nowP, TimerProc * timer_proc,
++	    ClientData client_data, long msecs, int periodic)
++{
++  Timer *t;
+ 
+-    t->timer_proc = timer_proc;
+-    t->client_data = client_data;
+-    t->msecs = msecs;
+-    t->periodic = periodic;
+-    if ( nowP != (struct timeval*) 0 )
+-	t->time = *nowP;
+-    else
+-	(void) gettimeofday( &t->time, (struct timezone*) 0 );
+-    t->time.tv_sec += msecs / 1000L;
+-    t->time.tv_usec += ( msecs % 1000L ) * 1000L;
+-    if ( t->time.tv_usec >= 1000000L )
+-	{
+-	t->time.tv_sec += t->time.tv_usec / 1000000L;
+-	t->time.tv_usec %= 1000000L;
+-	}
+-    t->hash = hash( t );
+-    /* Add the new timer to the proper active list. */
+-    l_add( t );
+-
+-    return t;
++  if (free_timers != (Timer *) 0)
++    {
++      t = free_timers;
++      free_timers = t->next;
+     }
+-
+-
+-struct timeval*
+-tmr_timeout( struct timeval* nowP )
++  else
+     {
+-    long msecs;
+-    static struct timeval timeout;
+-
+-    msecs = tmr_mstimeout( nowP );
+-    if ( msecs == INFTIM )
+-	return (struct timeval*) 0;
+-    timeout.tv_sec = msecs / 1000L;
+-    timeout.tv_usec = ( msecs % 1000L ) * 1000L;
+-    return &timeout;
++      t = (Timer *) malloc (sizeof (Timer));
++      if (t == (Timer *) 0)
++	return (Timer *) 0;
+     }
+ 
++  t->timer_proc = timer_proc;
++  t->client_data = client_data;
++  t->msecs = msecs;
++  t->periodic = periodic;
++  if (nowP != (struct timeval *) 0)
++    t->time = *nowP;
++  else
++    (void) gettimeofday (&t->time, (struct timezone *) 0);
++  t->time.tv_sec += msecs / 1000L;
++  t->time.tv_usec += (msecs % 1000L) * 1000L;
++  if (t->time.tv_usec >= 1000000L)
++    {
++      t->time.tv_sec += t->time.tv_usec / 1000000L;
++      t->time.tv_usec %= 1000000L;
++    }
++  t->hash = hash (t);
++  /* Add the new timer to the proper active list. */
++  l_add (t);
++
++  return t;
++}
++
++
++struct timeval *
++tmr_timeout (struct timeval *nowP)
++{
++  long msecs;
++  static struct timeval timeout;
++
++  msecs = tmr_mstimeout (nowP);
++  if (msecs == INFTIM)
++    return (struct timeval *) 0;
++  timeout.tv_sec = msecs / 1000L;
++  timeout.tv_usec = (msecs % 1000L) * 1000L;
++  return &timeout;
++}
++
+ 
+ long
+-tmr_mstimeout( struct timeval* nowP )
++tmr_mstimeout (struct timeval *nowP)
++{
++  int h;
++  int gotone;
++  long msecs, m;
++  register Timer *t;
++
++  gotone = 0;
++  msecs = 0;			/* make lint happy */
++  /* Since the lists are sorted, we only need to look at the
++   ** first timer on each one.
++   */
++  for (h = 0; h < HASH_SIZE; ++h)
+     {
+-    int h;
+-    int gotone;
+-    long msecs, m;
+-    register Timer* t;
+-
+-    gotone = 0;
+-    msecs = 0;          /* make lint happy */
+-    /* Since the lists are sorted, we only need to look at the
+-    ** first timer on each one.
+-    */
+-    for ( h = 0; h < HASH_SIZE; ++h )
++      t = timers[h];
++      if (t != (Timer *) 0)
+ 	{
+-	t = timers[h];
+-	if ( t != (Timer*) 0 )
++	  m = (t->time.tv_sec - nowP->tv_sec) * 1000L +
++	    (t->time.tv_usec - nowP->tv_usec) / 1000L;
++	  if (!gotone)
+ 	    {
+-	    m = ( t->time.tv_sec - nowP->tv_sec ) * 1000L +
+-		( t->time.tv_usec - nowP->tv_usec ) / 1000L;
+-	    if ( ! gotone )
+-		{
+-		msecs = m;
+-		gotone = 1;
+-		}
+-	    else if ( m < msecs )
+-		msecs = m;
++	      msecs = m;
++	      gotone = 1;
+ 	    }
++	  else if (m < msecs)
++	    msecs = m;
+ 	}
+-    if ( ! gotone )
+-	return INFTIM;
+-    if ( msecs <= 0 )
+-	msecs = 0;
+-    return msecs;
+     }
++  if (!gotone)
++    return INFTIM;
++  if (msecs <= 0)
++    msecs = 0;
++  return msecs;
++}
+ 
+ 
+ void
+-tmr_run( struct timeval* nowP )
+-    {
+-    int h;
+-    Timer* t;
+-    Timer* next;
+-
+-    for ( h = 0; h < HASH_SIZE; ++h )
+-	for ( t = timers[h]; t != (Timer*) 0; t = next )
+-	    {
+-	    next = t->next;
+-	    /* Since the lists are sorted, as soon as we find a timer
+-	    ** that isn't ready yet, we can go on to the next list.
+-	    */
+-	    if ( t->time.tv_sec > nowP->tv_sec ||
+-		 ( t->time.tv_sec == nowP->tv_sec &&
+-		   t->time.tv_usec > nowP->tv_usec ) )
+-		break;
+-	    (t->timer_proc)( t->client_data, nowP );
+-	    if ( t->periodic )
+-		{
+-		/* Reschedule. */
+-		t->time.tv_sec += t->msecs / 1000L;
+-		t->time.tv_usec += ( t->msecs % 1000L ) * 1000L;
+-		if ( t->time.tv_usec >= 1000000L )
+-		    {
+-		    t->time.tv_sec += t->time.tv_usec / 1000000L;
+-		    t->time.tv_usec %= 1000000L;
+-		    }
+-		l_resort( t );
+-		}
+-	    else
+-		tmr_cancel( t );
+-	    }
+-    }
++tmr_run (struct timeval *nowP)
++{
++  int h;
++  Timer *t;
++  Timer *next;
++
++  for (h = 0; h < HASH_SIZE; ++h)
++    for (t = timers[h]; t != (Timer *) 0; t = next)
++      {
++	next = t->next;
++	/* Since the lists are sorted, as soon as we find a timer
++	 ** that isn't ready yet, we can go on to the next list.
++	 */
++	if (t->time.tv_sec > nowP->tv_sec ||
++	    (t->time.tv_sec == nowP->tv_sec &&
++	     t->time.tv_usec > nowP->tv_usec))
++	  break;
++	(t->timer_proc) (t->client_data, nowP);
++	if (t->periodic)
++	  {
++	    /* Reschedule. */
++	    t->time.tv_sec += t->msecs / 1000L;
++	    t->time.tv_usec += (t->msecs % 1000L) * 1000L;
++	    if (t->time.tv_usec >= 1000000L)
++	      {
++		t->time.tv_sec += t->time.tv_usec / 1000000L;
++		t->time.tv_usec %= 1000000L;
++	      }
++	    l_resort (t);
++	  }
++	else
++	  tmr_cancel (t);
++      }
++}
+ 
+ 
+ void
+-tmr_reset( struct timeval* nowP, Timer* t )
++tmr_reset (struct timeval *nowP, Timer * t)
++{
++  t->time = *nowP;
++  t->time.tv_sec += t->msecs / 1000L;
++  t->time.tv_usec += (t->msecs % 1000L) * 1000L;
++  if (t->time.tv_usec >= 1000000L)
+     {
+-    t->time = *nowP;
+-    t->time.tv_sec += t->msecs / 1000L;
+-    t->time.tv_usec += ( t->msecs % 1000L ) * 1000L;
+-    if ( t->time.tv_usec >= 1000000L )
+-	{
+-	t->time.tv_sec += t->time.tv_usec / 1000000L;
+-	t->time.tv_usec %= 1000000L;
+-	}
+-    l_resort( t );
++      t->time.tv_sec += t->time.tv_usec / 1000000L;
++      t->time.tv_usec %= 1000000L;
+     }
++  l_resort (t);
++}
+ 
+ 
+ void
+-tmr_cancel( Timer* t )
+-    {
+-    /* Remove it from its active list. */
+-    l_remove( t );
+-    /* And put it on the free list. */
+-    t->next = free_timers;
+-    free_timers = t;
+-    t->prev = (Timer*) 0;
+-    }
++tmr_cancel (Timer * t)
++{
++  /* Remove it from its active list. */
++  l_remove (t);
++  /* And put it on the free list. */
++  t->next = free_timers;
++  free_timers = t;
++  t->prev = (Timer *) 0;
++}
+ 
+ 
+ void
+-tmr_cleanup( void )
+-    {
+-    Timer* t;
++tmr_cleanup (void)
++{
++  Timer *t;
+ 
+-    while ( free_timers != (Timer*) 0 )
+-	{
+-	t = free_timers;
+-	free_timers = t->next;
+-	free( (void*) t );
+-	}
++  while (free_timers != (Timer *) 0)
++    {
++      t = free_timers;
++      free_timers = t->next;
++      free ((void *) t);
+     }
++}
+ 
+ 
+ void
+-tmr_destroy( void )
+-    {
+-    int h;
+-
+-    for ( h = 0; h < HASH_SIZE; ++h )
+-	while ( timers[h] != (Timer*) 0 )
+-	    tmr_cancel( timers[h] );
+-    tmr_cleanup();
+-    }
++tmr_destroy (void)
++{
++  int h;
++
++  for (h = 0; h < HASH_SIZE; ++h)
++    while (timers[h] != (Timer *) 0)
++      tmr_cancel (timers[h]);
++  tmr_cleanup ();
++}
+--- httpload-0.1.orig/timers.h
++++ httpload-0.1/timers.h
+@@ -38,11 +38,12 @@
+ ** can use it for whatever, and it gets passed to the callback when the
+ ** timer triggers.
+ */
+-typedef union {
+-    void* p;
+-    int i;
+-    long l;
+-    } ClientData;
++typedef union
++{
++  void *p;
++  int i;
++  long l;
++} ClientData;
+ 
+ extern ClientData JunkClientData;	/* for use when you don't care */
+ 
+@@ -50,57 +51,57 @@ extern ClientData JunkClientData;	/* for
+ ** the ClientData associated with the timer, and a timeval in case
+ ** it wants to schedule another timer.
+ */
+-typedef void TimerProc( ClientData client_data, struct timeval* nowP );
++typedef void TimerProc (ClientData client_data, struct timeval *nowP);
+ 
+ /* The Timer struct. */
+-typedef struct TimerStruct {
+-    TimerProc* timer_proc;
+-    ClientData client_data;
+-    long msecs;
+-    int periodic;
+-    struct timeval time;
+-    struct TimerStruct* prev;
+-    struct TimerStruct* next;
+-    int hash;
+-    } Timer;
++typedef struct TimerStruct
++{
++  TimerProc *timer_proc;
++  ClientData client_data;
++  long msecs;
++  int periodic;
++  struct timeval time;
++  struct TimerStruct *prev;
++  struct TimerStruct *next;
++  int hash;
++} Timer;
+ 
+ /* Initialize the timer package. */
+-extern void tmr_init( void );
++extern void tmr_init (void);
+ 
+ /* Set up a timer, either periodic or one-shot. Returns (Timer*) 0 on errors. */
+-extern Timer* tmr_create(
+-    struct timeval* nowP, TimerProc* timer_proc, ClientData client_data,
+-    long msecs, int periodic );
++extern Timer *tmr_create (struct timeval *nowP, TimerProc * timer_proc,
++			  ClientData client_data, long msecs, int periodic);
+ 
+ /* Returns a timeout indicating how long until the next timer triggers.  You
+ ** can just put the call to this routine right in your select().  Returns
+ ** (struct timeval*) 0 if no timers are pending.
+ */
+-extern struct timeval* tmr_timeout( struct timeval* nowP );
++extern struct timeval *tmr_timeout (struct timeval *nowP);
+ 
+ /* Returns a timeout in milliseconds indicating how long until the next timer
+ ** triggers.  You can just put the call to this routine right in your poll().
+ ** Returns INFTIM (-1) if no timers are pending.
+ */
+-extern long tmr_mstimeout( struct timeval* nowP );
++extern long tmr_mstimeout (struct timeval *nowP);
+ 
+ /* Run the list of timers. Your main program needs to call this every so often,
+ ** or as indicated by tmr_timeout().
+ */
+-extern void tmr_run( struct timeval* nowP );
++extern void tmr_run (struct timeval *nowP);
+ 
+ /* Reset the clock on a timer, to current time plus the original timeout. */
+-extern void tmr_reset( struct timeval* nowP, Timer* timer );
++extern void tmr_reset (struct timeval *nowP, Timer * timer);
+ 
+ /* Deschedule a timer.  Note that non-periodic timers are automatically
+ ** descheduled when they run, so you don't have to call this on them.
+ */
+-extern void tmr_cancel( Timer* timer );
++extern void tmr_cancel (Timer * timer);
+ 
+ /* Clean up the timers package, freeing any unused storage. */
+-extern void tmr_cleanup( void );
++extern void tmr_cleanup (void);
+ 
+ /* Cancel all timers and free storage, usually in preparation for exitting. */
+-extern void tmr_destroy( void );
++extern void tmr_destroy (void);
+ 
+ #endif /* _TIMERS_H_ */
