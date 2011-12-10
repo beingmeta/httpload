@@ -1,3 +1,13 @@
+httpload (0.2-1) unstable; urgency=low
+
+  * New release. 
+  
+  * Updated the manpage. 
+  
+  * Better debianization.
+
+ -- António P. P. Almeida <appa@perusio.net>  Sat, 10 Dec 2011 03:18:36 +0000
+
 httpload (0.1-1) unstable; urgency=low
 
   * Initial release.

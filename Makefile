@@ -37,7 +37,7 @@ COMPRESS=/bin/gzip -9
 
 OBJS=httpload.o timers.o
 
-MANS=httpload.1
+MANS=debian/httpload.1
 
 DOCS=README.md
 

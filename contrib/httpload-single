@@ -54,7 +54,7 @@ for i in $*; do
         j=$((j+1))
     fi
 done
-echo "$HTTPLOAD_ARGS $i" && exit 0
+
 ## Creating the temporary file with the URL.
 TEMP_FILE=$(mktemp --tmpdir=.)
 
