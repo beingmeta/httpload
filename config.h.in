@@ -1,0 +1,16 @@
+/* Template for configure script */
+
+/* Various SSL headers*/
+#undef HAVE_OPENSSL_SSL_H
+#undef HAVE_OPENSSL_RAND_H
+#undef HAVE_OPENSSL_ERR_H
+#undef HAVE_OPENSSL_CRYPTO_H
+
+/* If you have the SSL libraries */
+#undef HAVE_LIBSSL
+#undef HAVE_LIBCRYPTO
+
+#define USE_SSL \
+  ((HAVE_OPENSSL_SSL_H)&&(HAVE_OPENSSL_RAND_H)&&	\
+   (HAVE_OPENSSL_ERR_H)&&(HAVE_OPENSSL_CRYPTO_H)&& \
+   (HAVE_LIBSSL)&&(HAVE_LIBCRYPTO))

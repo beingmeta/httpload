@@ -1,0 +1,40 @@
+# Makefile for httpload
+
+prefix		= @prefix@
+exec_prefix	= @exec_prefix@
+datarootdir	= @datarootdir@
+datadir		= @datadir@
+BINDIR 		= @prefix@/bin
+MANDIR 		= @mandir@/man1
+CC 		= gcc -Wall
+CFLAGS	 	= -O  @CFLAGS@
+LDFLAGS 	= @LDFLAGS@ @LIBS@
+#LDFLAGS 	= -g $(SSL_LIBS) $(SYSV_LIBS)
+
+all:		httpload
+
+http_load:	httpload.o timers.o
+	$(CC) $(CFLAGS) httpload.o timers.o $(LDFLAGS) -o httpload
+
+http_load.o:	httpload.c timers.h port.h
+	$(CC) $(CFLAGS) -c httpload.c
+
+timers.o:	timers.c timers.h
+	$(CC) $(CFLAGS) -c timers.c
+
+install:	all
+	cp httpload $(BINDIR)
+	cp httpload.1 $(MANDIR)
+
+clean:
+	rm -f httpload *.o core core.* *.core
+
+tar:
+	@name=`sed -n -e '/define VERSION /!d' -e 's,.*http_load ,http_load-,' -e 's,",,p' version.h` ; \
+	  rm -rf $$name ; \
+	  mkdir $$name ; \
+	  tar cf - `cat FILES` | ( cd $$name ; tar xfBp - ) ; \
+	  chmod 644 $$name/Makefile ; \
+	  tar cf $$name.tar $$name ; \
+	  rm -rf $$name ; \
+	  gzip $$name.tar
