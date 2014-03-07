@@ -25,12 +25,15 @@
 ** SUCH DAMAGE.
 */
 
+#include "config.h"
+
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <fcntl.h>
 #include <time.h>
+#include <ctype.h>
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/resource.h>
@@ -45,6 +48,7 @@
 #include <openssl/ssl.h>
 #include <openssl/rand.h>
 #include <openssl/err.h>
+#include <openssl/crypto.h>
 #include "ssl_ciphers.h"
 #endif
 
@@ -132,6 +136,12 @@ typedef struct
 } connection;
 static connection *connections;
 static int max_connections, num_connections, max_parallel;
+static int think_time=0; /* KH: think time for pausing between fetches */
+static int bytes_vary=0; /* KH: whether returned bytes may vary */
+static int in_order=0; /* KH: advance through the URL list linearly */
+static int default_https=0; /* KH: whether to use HTTPS by default */
+static char *default_hostname=NULL; /* KH: hostname to use by default */
+static int perrors=0;  /* KH: control verbosity */
 
 static int http_status_counts[1000];	/* room for all three-digit statuses */
 
@@ -140,6 +150,7 @@ static int http_status_counts[1000];	/* room for all three-digit statuses */
 #define CNST_HEADERS 2
 #define CNST_READING 3
 #define CNST_PAUSING 4
+#define CNST_THINKING 5 /* KH: Pausing between fetches */
 
 #define HDST_LINE1_PROTOCOL 0
 #define HDST_LINE1_WHITESPACE 1
@@ -196,6 +207,7 @@ static char *cipher = (char *) 0;
 /* Forwards. */
 static void usage (void);
 static void read_url_file (char *url_file);
+static int blank_linep(char *scan);
 static void lookup_address (int url_num);
 static void read_sip_file (char *sip_file);
 static void start_connection (struct timeval *nowP);
@@ -210,15 +222,14 @@ static void start_timer (ClientData client_data, struct timeval *nowP);
 static void end_timer (ClientData client_data, struct timeval *nowP);
 static void finish (struct timeval *nowP);
 static long long delta_timeval (struct timeval *start,
-				struct timeval *finish);
+				  struct timeval *finish);
 static void *malloc_check (size_t size);
 static void *realloc_check (void *ptr, size_t size);
 static char *strdup_check (char *str);
 static void check (void *ptr);
 
-
-int
-main (int argc, char **argv)
+int main
+(int argc, char **argv)
 {
   int argn;
   int start;
@@ -283,6 +294,9 @@ main (int argc, char **argv)
 	}
       else if (strncmp (argv[argn], "-verbose", strlen (argv[argn])) == 0)
 	do_verbose = 1;
+      /* KH: Allow specification of PROGESS_SECS */
+      else if ( strncmp( argv[argn], "-progress", strlen( argv[argn] ) ) == 0 )
+	do_verbose = atoi( argv[++argn] );
       else if (strncmp (argv[argn], "-timeout", strlen (argv[argn])) == 0
 	       && argn + 1 < argc)
 	idle_secs = atoi (argv[++argn]);
@@ -347,6 +361,36 @@ main (int argc, char **argv)
 	      exit (1);
 	    }
 	}
+      /* KH: Handle -think arg */
+      else if ( strncmp( argv[argn], "-think", strlen( argv[argn] ) ) == 0 && argn + 1 < argc )
+	{
+	  think_time = atoi( argv[++argn] );
+	  if ( think_time < 0 )
+	    {
+	      (void) fprintf(stderr, "%s: think time must be >= 0\n", argv0 );
+	      exit( 1 );
+	    }
+	}
+      /* KH: Handle -perrors arg */
+      else if ( strncmp( argv[argn], "-perror", strlen( argv[argn] ) ) == 0 && argn + 1 < argc )
+	{
+	  perrors = atoi( argv[++argn] );
+	}
+      /* KH: Handle -bytesvary arg */
+      else if ( strncmp( argv[argn], "-bytesvary", strlen( argv[argn] ) ) == 0)
+	{
+	  bytes_vary=1;
+	}
+      /* KH: March through the URLs in order */
+      else if ( strncmp( argv[argn], "-ordered", strlen( argv[argn] ) ) == 0)
+	{
+	  in_order=1;
+	}
+      /* KH: Use HTTPS by default */
+      else if ( strncmp( argv[argn], "-https", strlen( argv[argn] ) ) == 0)
+	{
+	  default_https=1;
+	}
       else if (strncmp (argv[argn], "-seed", strlen (argv[argn])) == 0
 	       && argn + 1 < argc)
 	{
@@ -407,8 +451,9 @@ main (int argc, char **argv)
     max_connections = start_parallel;
   connections =
     (connection *) malloc_check (max_connections * sizeof (connection));
-  for (cnum = 0; cnum < max_connections; ++cnum)
-    connections[cnum].conn_state = CNST_FREE;
+  for (cnum = 0; cnum < max_connections; ++cnum) {
+    connections[cnum].url_num = -1;
+    connections[cnum].conn_state = CNST_FREE;}
   num_connections = max_parallel = 0;
 
   /* Initialize the HTTP status-code histogram. */
@@ -482,8 +527,8 @@ main (int argc, char **argv)
 	  /* See if we need to start any new connections; but at most 10. */
 	  for (i = 0;
 	       i < 10 &&
-	       num_connections < start_parallel &&
-	       (end != END_FETCHES || fetches_started < end_fetches); ++i)
+		 num_connections < start_parallel &&
+		 (end != END_FETCHES || fetches_started < end_fetches); ++i)
 	    {
 	      start_connection (&now);
 	      (void) gettimeofday (&now, (struct timezone *) 0);
@@ -541,7 +586,7 @@ static void
 usage (void)
 {
   (void) fprintf (stderr,
-		  "usage:  %s [-checksum] [-throttle] [-proxy host:port] [-verbose] [-seed N] [-timeout secs] [-sip sip_file]\n",
+		  "usage:  %s [-checksum] [-throttle] [-proxy host:port] [-https] [-seed N] [-ordered] [-think secs] [-timeout secs] [-sip sip_file] [-verbose] [-bytesvary] [-perror] [-progress secs]\n",
 		  argv0);
 #ifdef USE_SSL
   (void) fprintf (stderr, "            [-cipher str]\n");
@@ -558,93 +603,108 @@ usage (void)
 
 
 static void
-read_url_file (char *url_file)
-{
-  FILE *fp;
+read_url_file( char* url_file ){
+  FILE* fp;
   char line[5000], hostname[5000];
-  char *http = "http://";
-  int http_len = strlen (http);
+  char* http = "http://";
+  int http_len = strlen( http );
 #ifdef USE_SSL
-  char *https = "https://";
-  int https_len = strlen (https);
+  char* https = "https://";
+  int https_len = strlen( https );
 #endif
   int proto_len, host_len;
-  char *cp;
+  char* cp;
 
-  fp = fopen (url_file, "r");
-  if (fp == (FILE *) 0)
+  fp = fopen( url_file, "r" );
+  if ( fp == (FILE*) 0 )
     {
-      perror (url_file);
-      exit (1);
+      if (perrors) perror( url_file );
+      exit( 1 );
     }
 
   max_urls = 100;
-  urls = (url *) malloc_check (max_urls * sizeof (url));
+  urls = (url*) malloc_check( max_urls * sizeof(url) );
   num_urls = 0;
-  while (fgets (line, sizeof (line), fp) != (char *) 0)
-    {
+  while ( fgets( line, sizeof(line), fp ) != (char*) 0 )
+    /* KH: Allow comments and blank lines in the URL file */
+    if (line[0]=='#') continue;
+    else if (blank_linep(line)) continue;
+    else {
       /* Nuke trailing newline. */
-      if (line[strlen (line) - 1] == '\n')
-	line[strlen (line) - 1] = '\0';
+      if ( line[strlen( line ) - 1] == '\n' )
+	line[strlen( line ) - 1] = '\0';
 
       /* Check for room in urls. */
-      if (num_urls >= max_urls)
+      if ( num_urls >= max_urls )
 	{
 	  max_urls *= 2;
-	  urls =
-	    (url *) realloc_check ((void *) urls, max_urls * sizeof (url));
+	  urls = (url*) realloc_check( (void*) urls, max_urls * sizeof(url) );
 	}
 
       /* Add to table. */
-      urls[num_urls].url_str = strdup_check (line);
+      urls[num_urls].url_str = strdup_check( line );
 
       /* Parse it. */
-      if (strncmp (http, line, http_len) == 0)
+      if ( strncmp( http, line, http_len ) == 0 )
 	{
 	  proto_len = http_len;
 	  urls[num_urls].protocol = PROTO_HTTP;
 	}
 #ifdef USE_SSL
-      else if (strncmp (https, line, https_len) == 0)
+      else if ( strncmp( https, line, https_len ) == 0 )
 	{
 	  proto_len = https_len;
 	  urls[num_urls].protocol = PROTO_HTTPS;
 	}
 #endif
-      else
+      /* KH: Recognizing bad URLs (and calling them that) */
+      else if ((strchr(line,':'))||
+	       (strchr(line,'/')==NULL)||
+	       (default_hostname==NULL))
 	{
-	  (void) fprintf (stderr, "%s: unknown protocol - %s\n", argv0, line);
-	  exit (1);
+	  (void) fprintf( stderr, "%s: mal-formed URL - %s\n", argv0, line );
+	  exit( 1 );
 	}
-      for (cp = line + proto_len;
-	   *cp != '\0' && *cp != ':' && *cp != '/'; ++cp)
-	;
-      host_len = cp - line;
-      host_len -= proto_len;
-      strncpy (hostname, line + proto_len, host_len);
-      hostname[host_len] = '\0';
-      urls[num_urls].hostname = strdup_check (hostname);
-      if (*cp == ':')
+      else {}
+      if (proto_len) {
+	for ( cp = line + proto_len;
+	      *cp != '\0' && *cp != ':' && *cp != '/'; ++cp )
+	  ;
+	host_len = cp - line;
+	host_len -= proto_len;
+	strncpy( hostname, line + proto_len, host_len );
+	hostname[host_len] = '\0';}
+      else {
+#ifdef USE_SSL
+	if (default_https)
+	  urls[num_urls].protocol = PROTO_HTTPS;
+	else urls[num_urls].protocol = PROTO_HTTP;
+#else
+	urls[num_urls].protocol = PROTO_HTTP;
+#endif
+	strcpy(hostname,default_hostname);}
+      urls[num_urls].hostname = strdup_check( hostname );
+      if ( *cp == ':' )
 	{
-	  urls[num_urls].port = (unsigned short) atoi (++cp);
-	  while (*cp != '\0' && *cp != '/')
+	  urls[num_urls].port = (unsigned short) atoi( ++cp );
+	  while ( *cp != '\0' && *cp != '/' )
 	    ++cp;
 	}
       else
 #ifdef USE_SSL
-      if (urls[num_urls].protocol == PROTO_HTTPS)
-	urls[num_urls].port = 443;
-      else
-	urls[num_urls].port = 80;
+	if ( urls[num_urls].protocol == PROTO_HTTPS )
+	  urls[num_urls].port = 443;
+	else
+	  urls[num_urls].port = 80;
 #else
-	urls[num_urls].port = 80;
+      urls[num_urls].port = 80;
 #endif
-      if (*cp == '\0')
-	urls[num_urls].filename = strdup_check ("/");
+      if ( *cp == '\0' )
+	urls[num_urls].filename = strdup_check( "/" );
       else
-	urls[num_urls].filename = strdup_check (cp);
+	urls[num_urls].filename = strdup_check( cp );
 
-      lookup_address (num_urls);
+      lookup_address( num_urls );
 
       urls[num_urls].got_bytes = 0;
       urls[num_urls].got_checksum = 0;
@@ -652,6 +712,15 @@ read_url_file (char *url_file)
     }
 }
 
+/* KH: To skip blank lines in the URL file */
+static int blank_linep(char *scan)
+{
+  while (*scan) {
+    if (*scan=='\n') return 1;
+    else if (isspace(*scan)) scan++;
+    else return 0;}
+  return 1;
+}
 
 static void
 lookup_address (int url_num)
@@ -830,7 +899,12 @@ start_connection (struct timeval *nowP)
     if (connections[cnum].conn_state == CNST_FREE)
       {
 	/* Choose a URL. */
-	url_num = ((unsigned long) random ()) % ((unsigned int) num_urls);
+	if ((in_order)&&(connections[cnum].url_num<0))
+	  url_num = ( (unsigned long) random() ) % ( (unsigned int) num_urls );
+	else if (in_order)
+	  url_num=(connections[cnum].url_num+1)%( (unsigned int) num_urls );
+	else url_num = ( (unsigned long) random() ) % ( (unsigned int) num_urls );
+
 	/* Start the socket. */
 	start_socket (url_num, cnum, nowP);
 	if (connections[cnum].conn_state != CNST_FREE)
@@ -974,7 +1048,7 @@ handle_connect (int cnum, struct timeval *nowP, int double_check)
 	      close_connection (cnum);
 	      return;
 	    default:
-	      perror (urls[url_num].url_str);
+	      if (perrors) perror (urls[url_num].url_str);
 	      close_connection (cnum);
 	      return;
 	    }
@@ -1075,7 +1149,7 @@ handle_connect (int cnum, struct timeval *nowP, int double_check)
 #endif
   if (r < 0)
     {
-      perror (urls[url_num].url_str);
+      if (perrors) perror (urls[url_num].url_str);
       close_connection (cnum);
       return;
     }
@@ -1124,11 +1198,11 @@ handle_read (int cnum, struct timeval *nowP)
 	{
 	case CNST_HEADERS:
 	  /* State machine to read until we reach the file part.  Looks for
-	   ** Content-Length header too.
-	   */
+	  ** Content-Length header too.
+	  */
 	  for (;
 	       bytes_handled < bytes_read
-	       && connections[cnum].conn_state == CNST_HEADERS;
+		 && connections[cnum].conn_state == CNST_HEADERS;
 	       ++bytes_handled)
 	    {
 	      switch (connections[cnum].header_state)
@@ -1743,6 +1817,17 @@ wakeup_connection (ClientData client_data, struct timeval *nowP)
 
 
 static void
+stop_thinking( ClientData client_data, struct timeval* nowP )
+{
+  int cnum;
+
+  cnum = client_data.i;
+  connections[cnum].wakeup_timer = (Timer*) 0;
+  connections[cnum].conn_state = CNST_FREE;
+  --num_connections;
+}
+
+static void
 close_connection (int cnum)
 {
   int url_num;
@@ -1771,7 +1856,11 @@ close_connection (int cnum)
     tmr_cancel (connections[cnum].idle_timer);
   if (connections[cnum].wakeup_timer != (Timer *) 0)
     tmr_cancel (connections[cnum].wakeup_timer);
-  --num_connections;
+  if (think_time) {
+    ClientData client_data; client_data.i=cnum;
+    connections[cnum].wakeup_timer=
+      tmr_create(NULL, stop_thinking, client_data, think_time*1000L, 0 );}
+  else --num_connections;
   ++fetches_completed;
   total_bytes += connections[cnum].bytes;
   if (connections[cnum].did_connect)
@@ -1828,19 +1917,22 @@ close_connection (int cnum)
 	    }
 	}
     }
-  else
+  else if (!(bytes_vary))
     {
-      if (!urls[url_num].got_bytes)
+      if ( ! urls[url_num].got_bytes )
 	{
 	  urls[url_num].bytes = connections[cnum].bytes;
 	  urls[url_num].got_bytes = 1;
 	}
       else
 	{
-	  if (connections[cnum].bytes != urls[url_num].bytes)
+	  if ( connections[cnum].bytes != urls[url_num].bytes )
 	    {
-	      (void) fprintf (stderr, "%s: byte count wrong\n",
-			      urls[url_num].url_str);
+	      (void) fprintf(
+			     stderr, "%s: byte count changed %ld!=%ld\n",
+			     urls[url_num].url_str,
+			     connections[cnum].bytes,
+			     urls[url_num].bytes);
 	      ++total_badbytes;
 	    }
 	}
@@ -1854,10 +1946,11 @@ progress_report (ClientData client_data, struct timeval *nowP)
   float elapsed;
 
   elapsed = delta_timeval (&start_at, nowP) / 1000000.0;
-  (void) fprintf (stderr,
-		  "--- %g secs, %d fetches started, %d completed, %d current\n",
-		  elapsed, fetches_started, fetches_completed,
-		  num_connections);
+  (void) fprintf
+    (stderr,
+     "--- %g secs, %d fetches started, %d completed, %d current, %d timeouts\n",
+     elapsed, fetches_started, fetches_completed, num_connections,
+     total_timeouts);
 }
 
 
