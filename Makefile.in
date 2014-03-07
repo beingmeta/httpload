@@ -31,6 +31,22 @@ clean:
 distclean:
 	rm -f config.h config.status config.log Makefile
 
+debian: debian.done
+debian.done: staging/httpload_@VERSION@ staging/httpload_@VERSION@.orig.tar.gz
+	(cd staging/httpload-@VERSION@; \
+	  dpkg-buildpackage -k $(GPGID:-default) -rfakeroot) && \
+	(cd staging; mv httpload_@VERSION@*.deb httpload_@VERSION@*.dsc ..; \
+	   mv httpload_@VERSION@*.gz httpload_@VERSION@*.changes ..;) && \
+	touch dist/debian.done
+
+staging:
+	if test ! -d staging; then mkdir staging; fi
+staging/httpload_@VERSION@ staging/httpload_@VERSION@.orig.tar.gz: staging
+	git archive --prefix=httpload-@VERSION@/ \
+	            -o staging/httpload_@VERSION@.orig.tar HEAD
+	cd staging; tar -xf httpload_@VERSION@.orig.tar; \
+		gzip httpload_@VERSION@.orig.tar
+
 tar:
 	@name=`sed -n -e '/define VERSION /!d' -e 's,.*http_load ,http_load-,' -e 's,",,p' version.h` ; \
 	  rm -rf $$name ; \
