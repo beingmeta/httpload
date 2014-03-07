@@ -9,6 +9,7 @@ MANDIR 		= @mandir@/man1
 CC 		= gcc -Wall
 CFLAGS	 	= -O  @CFLAGS@
 LDFLAGS 	= @LDFLAGS@ @LIBS@
+DESTDIR		=
 #LDFLAGS 	= -g $(SSL_LIBS) $(SYSV_LIBS)
 
 all:		httpload
@@ -23,8 +24,8 @@ timers.o:	timers.c timers.h
 	$(CC) $(CFLAGS) -c timers.c
 
 install:	all
-	cp httpload $(BINDIR)
-	cp httpload.1 $(MANDIR)
+	etc/install-sh httpload $(DESTDIR)$(BINDIR)
+	etc/install-sh httpload.1 $(DESTDIR)$(MANDIR)
 
 clean:
 	rm -f httpload *.o core core.* *.core
