@@ -39,10 +39,9 @@ httpload.debian: staging/httpload_@VERSION@ staging/httpload_@VERSION@.orig.tar.
 	   mv httpload_@VERSION@*.deb httpload_@VERSION@*.dsc ../packages; \
 	   mv httpload_@VERSION@*.gz httpload_@VERSION@*.changes ../packages;) && \
 	touch httpload.debian
-deb debian: httpload.debian
-freshdeb:
+deb debian:
 	rm -rf staging
-	make debian
+	make httpload.debian
 
 staging:
 	if test ! -d staging; then mkdir staging; fi
