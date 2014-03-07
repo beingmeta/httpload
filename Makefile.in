@@ -13,10 +13,10 @@ LDFLAGS 	= @LDFLAGS@ @LIBS@
 
 all:		httpload
 
-http_load:	httpload.o timers.o
+httpload:	httpload.o timers.o
 	$(CC) $(CFLAGS) httpload.o timers.o $(LDFLAGS) -o httpload
 
-http_load.o:	httpload.c timers.h port.h
+httpload.o:	httpload.c timers.h port.h
 	$(CC) $(CFLAGS) -c httpload.c
 
 timers.o:	timers.c timers.h
@@ -28,6 +28,8 @@ install:	all
 
 clean:
 	rm -f httpload *.o core core.* *.core
+distclean:
+	rm -f config.h config.status config.log Makefile
 
 tar:
 	@name=`sed -n -e '/define VERSION /!d' -e 's,.*http_load ,http_load-,' -e 's,",,p' version.h` ; \
