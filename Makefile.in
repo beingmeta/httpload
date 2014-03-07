@@ -35,8 +35,9 @@ distclean:
 httpload.debian: staging/httpload_@VERSION@ staging/httpload_@VERSION@.orig.tar.gz
 	(cd staging/httpload-@VERSION@; \
 	  dpkg-buildpackage -k $(GPGID:-default) -rfakeroot) && \
-	(cd staging; mv httpload_@VERSION@*.deb httpload_@VERSION@*.dsc ..; \
-	   mv httpload_@VERSION@*.gz httpload_@VERSION@*.changes ..;) && \
+	(cd staging; \
+	   mv httpload_@VERSION@*.deb httpload_@VERSION@*.dsc ../packages; \
+	   mv httpload_@VERSION@*.gz httpload_@VERSION@*.changes ../packages;) && \
 	touch httpload.debian
 deb debian: httpload.debian
 freshdeb:
