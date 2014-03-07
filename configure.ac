@@ -3,7 +3,7 @@ AC_PREFIX_PROGRAM(autoconf)
 AC_CONFIG_HEADER(config.h)
 AC_CONFIG_AUX_DIR(etc)
 
-VERSION=0.2
+VERSION=0.3
 AC_SUBST(VERSION)
 
 AC_CHECK_HEADERS(openssl/ssl.h openssl/rand.h openssl/err.h openssl/crypto.h)
