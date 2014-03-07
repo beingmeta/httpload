@@ -32,13 +32,16 @@ clean:
 distclean:
 	rm -f config.h config.status config.log Makefile
 
-debian.done: staging/httpload_@VERSION@ staging/httpload_@VERSION@.orig.tar.gz
+httpload.debian: staging/httpload_@VERSION@ staging/httpload_@VERSION@.orig.tar.gz
 	(cd staging/httpload-@VERSION@; \
 	  dpkg-buildpackage -k $(GPGID:-default) -rfakeroot) && \
 	(cd staging; mv httpload_@VERSION@*.deb httpload_@VERSION@*.dsc ..; \
 	   mv httpload_@VERSION@*.gz httpload_@VERSION@*.changes ..;) && \
 	touch httpload.debian
-debian: httpload.debian
+deb debian: httpload.debian
+freshdeb:
+	rm -rf staging
+	make debian
 
 staging:
 	if test ! -d staging; then mkdir staging; fi
