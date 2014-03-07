@@ -1,3 +1,11 @@
+httpload (0.3-1) unstable; urgency=low
+
+  * New release. 
+  
+  * Added more options
+  
+ -- Kenneth Benefiel Haase <kh@beingmeta.com>  Fri, 7 Mar 2014 16:42:36 +0000
+
 httpload (0.2-1) unstable; urgency=low
 
   * New release. 
