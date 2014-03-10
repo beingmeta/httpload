@@ -141,7 +141,7 @@ static int bytes_vary=0; /* KH: whether returned bytes may vary */
 static int in_order=0; /* KH: advance through the URL list linearly */
 static int default_https=0; /* KH: whether to use HTTPS by default */
 static char *default_hostname=NULL; /* KH: hostname to use by default */
-static int perrors=0;  /* KH: control verbosity */
+static int perrors=1;  /* KH: control verbosity */
 
 static int http_status_counts[1000];	/* room for all three-digit statuses */
 
@@ -371,10 +371,10 @@ int main
 	      exit( 1 );
 	    }
 	}
-      /* KH: Handle -perrors arg */
-      else if ( strncmp( argv[argn], "-perror", strlen( argv[argn] ) ) == 0 && argn + 1 < argc )
+      /* KH: Handle -quiet arg */
+      else if ( strncmp( argv[argn], "-quiet", strlen( argv[argn] ) ) == 0 )
 	{
-	  perrors = atoi( argv[++argn] );
+	  perrors = 0;
 	}
       /* KH: Handle -bytesvary arg */
       else if ( strncmp( argv[argn], "-bytesvary", strlen( argv[argn] ) ) == 0)
@@ -950,7 +950,7 @@ start_socket (int url_num, int cnum, struct timeval *nowP)
 	    urls[url_num].sock_protocol);
   if (connections[cnum].conn_fd < 0)
     {
-      perror (urls[url_num].url_str);
+      if (perrors) perror (urls[url_num].url_str);
       return;
     }
 
@@ -958,14 +958,16 @@ start_socket (int url_num, int cnum, struct timeval *nowP)
   flags = fcntl (connections[cnum].conn_fd, F_GETFL, 0);
   if (flags == -1)
     {
-      perror (urls[url_num].url_str);
-      (void) close (connections[cnum].conn_fd);
+      if (perrors) perror (urls[url_num].url_str);
+      close_connection(cnum);
+      /* (void) close (connections[cnum].conn_fd); */
       return;
     }
   if (fcntl (connections[cnum].conn_fd, F_SETFL, flags | O_NDELAY) < 0)
     {
-      perror (urls[url_num].url_str);
-      (void) close (connections[cnum].conn_fd);
+      if (perrors) perror (urls[url_num].url_str);
+      close_connection(cnum);
+      /* (void) close (connections[cnum].conn_fd); */
       return;
     }
 
@@ -978,7 +980,8 @@ start_socket (int url_num, int cnum, struct timeval *nowP)
 		sizeof (sips[sip_num].sa)) < 0)
 	{
 	  perror ("binding local address");
-	  (void) close (connections[cnum].conn_fd);
+	  close_connection(cnum);
+	  /* (void) close (connections[cnum].conn_fd); */
 	  return;
 	}
     }
@@ -999,8 +1002,9 @@ start_socket (int url_num, int cnum, struct timeval *nowP)
 	}
       else
 	{
-	  perror (urls[url_num].url_str);
-	  (void) close (connections[cnum].conn_fd);
+	  if (perrors) perror (urls[url_num].url_str);
+	  close_connection(cnum);
+	  /* (void) close (connections[cnum].conn_fd); */
 	  return;
 	}
     }
