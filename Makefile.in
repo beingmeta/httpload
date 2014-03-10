@@ -25,7 +25,9 @@ timers.o:	timers.c timers.h
 
 install:	all
 	etc/install-sh httpload $(DESTDIR)$(BINDIR)
-	etc/install-sh httpload.1 $(DESTDIR)$(MANDIR)
+install-man:
+	etc/install-sh debian/httpload.1 $(DESTDIR)$(MANDIR)
+install-all: install install-man
 
 clean:
 	rm -f httpload *.o core core.* *.core
