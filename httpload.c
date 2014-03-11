@@ -1802,8 +1802,9 @@ idle_connection (ClientData client_data, struct timeval *nowP)
 
   cnum = client_data.i;
   connections[cnum].idle_timer = (Timer *) 0;
-  (void) fprintf (stderr, "%s: timed out\n",
-		  urls[connections[cnum].url_num].url_str);
+  if (perrors)
+    (void) fprintf (stderr, "%s: timed out\n",
+		    urls[connections[cnum].url_num].url_str);
   close_connection (cnum);
   ++total_timeouts;
 }
