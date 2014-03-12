@@ -64,7 +64,7 @@
 #define min(a,b) ((a)<=(b)?(a):(b))
 
 /* How long a connection can stay idle before we give up on it. */
-#define IDLE_SECS 60
+#define IDLE_SECS 30
 
 /* Default max bytes/second in throttle mode. */
 #define THROTTLE 3360
@@ -293,7 +293,7 @@ int main
 	  throttle = atoi (argv[++argn]) / 10.0;
 	}
       else if (strncmp (argv[argn], "-verbose", strlen (argv[argn])) == 0)
-	do_verbose = 1;
+	do_verbose = PROGRESS_SECS;
       /* KH: Allow specification of PROGESS_SECS */
       else if ( strncmp( argv[argn], "-progress", strlen( argv[argn] ) ) == 0 )
 	do_verbose = atoi( argv[++argn] );
@@ -498,7 +498,7 @@ int main
   start_at = now;
   if (do_verbose)
     (void) tmr_create (&now, progress_report, JunkClientData,
-		       PROGRESS_SECS * 1000L, 1);
+		       do_verbose * 1000L, 1);
   if (start == START_RATE)
     {
       start_interval = 1000L / start_rate;
@@ -930,6 +930,8 @@ start_socket (int url_num, int cnum, struct timeval *nowP)
   int flags;
   int sip_num;
 
+  /* fprintf(stderr,"Start socket %d\n",cnum); */
+
   /* Start filling in the connection slot. */
   connections[cnum].url_num = url_num;
   connections[cnum].started_at = *nowP;
@@ -1171,6 +1173,8 @@ handle_read (int cnum, struct timeval *nowP)
   ClientData client_data;
   register long checksum;
 
+  /* fprintf (stderr, "Reading bytes from %d\n",cnum); */
+
   tmr_reset (nowP, connections[cnum].idle_timer);
 
   if (do_throttle)
@@ -1190,6 +1194,8 @@ handle_read (int cnum, struct timeval *nowP)
 #else
   bytes_read = read (connections[cnum].conn_fd, buf, bytes_to_read);
 #endif
+  /* (void) fprintf (stderr, "Read %d bytes from %d\n",bytes_read,cnum); */
+
   if (bytes_read <= 0)
     {
       close_connection (cnum);
@@ -1803,8 +1809,9 @@ idle_connection (ClientData client_data, struct timeval *nowP)
   cnum = client_data.i;
   connections[cnum].idle_timer = (Timer *) 0;
   if (perrors)
-    (void) fprintf (stderr, "%s: timed out\n",
-		    urls[connections[cnum].url_num].url_str);
+    (void) fprintf (stderr, "%s: timed out on %d after %ld/%ld bytes\n",
+		    urls[connections[cnum].url_num].url_str,cnum,
+		    connections[cnum].bytes,connections[cnum].content_length);
   close_connection (cnum);
   ++total_timeouts;
 }
@@ -1816,6 +1823,11 @@ wakeup_connection (ClientData client_data, struct timeval *nowP)
   int cnum;
 
   cnum = client_data.i;
+  if (perrors)
+    (void) fprintf (stderr, "%s: timed out on %d after %ld/%ld bytes\n",
+		    urls[connections[cnum].url_num].url_str,cnum,
+		    connections[cnum].bytes,connections[cnum].content_length);
+
   connections[cnum].wakeup_timer = (Timer *) 0;
   connections[cnum].conn_state = CNST_READING;
 }
@@ -1830,6 +1842,8 @@ stop_thinking( ClientData client_data, struct timeval* nowP )
   connections[cnum].wakeup_timer = (Timer*) 0;
   connections[cnum].conn_state = CNST_FREE;
   --num_connections;
+
+  /* fprintf(stderr,"Stopped thinking on %d\n",cnum); */
 }
 
 static void
@@ -1840,27 +1854,23 @@ close_connection (int cnum)
   long long response_usecs = -1;
   int sock_port = -1;
 
-  if (1)
-    {
-      struct sockaddr_in sa;
-      socklen_t sa_len = sizeof (sa);
-      if (getsockname
-	  (connections[cnum].conn_fd, (struct sockaddr *) &sa, &sa_len) == 0)
-	sock_port = ntohs (sa.sin_port);
-      else
-	printf ("getsockname: %s\n", strerror (errno));
-    }
+  /* fprintf(stderr,"Close connection %d\n",cnum); */
 
 #ifdef USE_SSL
   if (urls[connections[cnum].url_num].protocol == PROTO_HTTPS)
     SSL_free (connections[cnum].ssl);
 #endif
   (void) close (connections[cnum].conn_fd);
-  connections[cnum].conn_state = CNST_FREE;
-  if (connections[cnum].idle_timer != (Timer *) 0)
+  if (think_time)
+    connections[cnum].conn_state = CNST_THINKING;
+  else connections[cnum].conn_state = CNST_FREE;
+  if (connections[cnum].idle_timer != (Timer *) 0) {
     tmr_cancel (connections[cnum].idle_timer);
-  if (connections[cnum].wakeup_timer != (Timer *) 0)
+    connections[cnum].idle_timer=(Timer*) 0;}
+
+  if (connections[cnum].wakeup_timer != (Timer *) 0) {
     tmr_cancel (connections[cnum].wakeup_timer);
+    connections[cnum].wakeup_timer=(Timer*) 0;}
   if (think_time) {
     ClientData client_data; client_data.i=cnum;
     connections[cnum].wakeup_timer=
